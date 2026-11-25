@@ -4,11 +4,11 @@ A visitor registers or returns with GitHub or Google from `/sign-in` or `/sign-u
 
 ## Sub-features
 
-- `github-signup`: lands on `Welcome back, <GitHub name>`. D1 holds the name with `first_name` and `last_name` both null, the methods `["github"]`, and `account_id` = the GitHub id. The same id coming back with a new email reaches the same user, and the Ditto email is unchanged.
+- `github-signup`: opens the workspace with the GitHub name in the Account menu. D1 holds the name with `first_name` and `last_name` both null, the methods `["github"]`, and `account_id` = the GitHub id. The same id coming back with a new email reaches the same user, and the Ditto email is unchanged.
 - `github-private-email`: an identity with `email: null` and a verified private primary address registers under that address.
-- `github-no-name`: `name: null` greets the user by the GitHub login.
+- `github-no-name`: `name: null` shows the GitHub login in the Account menu.
 - `github-cancel`: cancelled consent shows `GitHub sign-in was cancelled` on `/sign-in`, with no session.
-- `google-signup`: from `/sign-up`, D1 keeps `name`, `given_name` and `family_name`, and the methods are `["google"]`. A return reaches the same user, and a cancel shows `Google sign-in was cancelled`.
+- `google-signup`: from `/sign-up`, D1 stores the provider’s name and its given and family names in `name`, `first_name`, and `last_name`, and the methods are `["google"]`. A return reaches the same user, and a cancel shows `Google sign-in was cancelled`.
 - `oauth-other-method`: Google with the same verified email as a GitHub account shows `This account uses another sign-in method` on `/sign-in`. It opens no session, and D1 methods stay `["github"]`.
 
 ## How to get to it (user POV)

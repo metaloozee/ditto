@@ -1,6 +1,6 @@
 # Sessions
 
-`/`, `/settings` and `/settings/verify-email` require a session, checked on the server. `/design`, `/design/auth` and `/design.md` stay public. A session survives a refresh, and each device has its own. Sign-out revokes the current session on the server, so a copied cookie stops working. A session ends after `SESSION_EXPIRES_IN` of inactivity.
+`/`, `/settings` and `/settings/verify-email` require a session, checked on the server. `/design`, `/design/auth`, `/design/workspace?state=opened`, `/design/site-request?state=waiting`, and `/design.md` stay public. A session survives a refresh, and each device has its own. Sign-out revokes the current session on the server, so a copied cookie stops working. A session ends after `SESSION_EXPIRES_IN` of inactivity.
 
 ## Sub-features
 
@@ -11,7 +11,7 @@
 ## How to get to it (user POV)
 
 - Open a protected URL while signed out.
-- Sign in, reload, or choose `Sign out` in the header. Sign in on two devices.
+- Sign in, reload, or choose `Sign out` in the workspace Account menu. Sign in on two devices.
 
 ## Driving it with auth.sh
 
@@ -25,6 +25,6 @@ Preconditions:
 
 ## Gotchas
 
-- Expiry slides forward with use (`updateAge` = lifetime / 168). Any request during the idle wait, even a background fetch, resets the clock, so the journey leaves the page untouched while it waits.
+- Expiry slides forward with use (`updateAge` = lifetime / 168). An authenticated session read after the refresh interval can reset the clock, so the journey leaves the page untouched while it waits.
 - Cookies are `Secure` only on an HTTPS origin, and the stage is plain `http://localhost`. Assert `Secure` only against a deployed HTTPS stage, which this skill does not drive.
 - A short session lifetime also bounds every other journey. Raising `VERIFY_AUTH_CODE_EXPIRES_IN` above `VERIFY_AUTH_SESSION_EXPIRES_IN` makes the linking journeys flaky.

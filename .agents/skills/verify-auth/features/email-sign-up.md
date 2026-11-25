@@ -4,7 +4,7 @@ A visitor creates an account with a first name, a last name and an email address
 
 ## Sub-features
 
-- `signup-email`: the form leads to the `Check your email` step with no user row yet. One email arrives from `Ditto <sign-in@test.example>` with the subject `###### is your Ditto code` and a line giving the expiry. Entering the code lands on `Welcome back, Ada Lovelace`. D1 then holds `name`, `first_name` and `last_name`, the methods `["email"]` and one session.
+- `signup-email`: the form leads to the `Check your email` step with no user row yet. One email arrives from `Ditto <sign-in@test.example>` with the subject `###### is your Ditto code` and a line giving the expiry. Entering the code opens the workspace, where the Account menu shows `Ada Lovelace`. D1 then holds `name`, `first_name` and `last_name`, the methods `["email"]` and one session.
 - `signup-change-email`: `Use a different email` returns to the form with the names kept. The corrected address gets the account, and the mistyped address gets no user row.
 - `signup-existing`: a second sign-up with names `Someone Else` and a valid code lands on `/sign-in` with `You already have a Ditto account`. It opens no session, D1 keeps `Ada`/`Lovelace`, and there is still one user for the address.
 

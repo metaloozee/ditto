@@ -126,7 +126,17 @@ function journey(id) {
 		},
 		open: (page, path) => page.goto(path, { waitUntil: "networkidle" }),
 		path: (page) => new URL(page.url()).pathname,
-		heading: (page) => page.locator("h1").first().textContent(),
+		async workspace(page) {
+			await t.sees(page, "Hi, I’m Ditto, your Chief of Staff.");
+		},
+		async accountName(page, name) {
+			await t.workspace(page);
+			await page.getByRole("button", { name: "Account", exact: true }).click();
+			const label = page.getByRole("menu").getByText(name, { exact: true });
+			await label.waitFor();
+			t.eq("Account menu shows the owner’s name", await label.innerText(), name);
+			await page.keyboard.press("Escape");
+		},
 		/** Waits for text a user would read, such as a toast or an error line. */
 		async sees(page, text, timeout = 10_000) {
 			try {
@@ -184,7 +194,7 @@ function journey(id) {
 		async signUpByEmail(page, details) {
 			await t.signUpForm(page, details);
 			await t.enterCode(page, await latestCode(details.email));
-			await page.getByRole("heading", { name: /^Welcome back/ }).waitFor();
+			await t.workspace(page);
 		},
 		async requestSignIn(page, email) {
 			await t.open(page, "/sign-in");
@@ -208,7 +218,8 @@ function journey(id) {
 			await page.getByRole("button", { name: `Link ${method}` }).click();
 		},
 		async signOut(page) {
-			await page.getByRole("button", { name: "Sign out" }).click();
+			await page.getByRole("button", { name: "Account", exact: true }).click();
+			await page.getByRole("menuitem", { name: "Sign out" }).click();
 			await page.waitForURL((url) => url.pathname === "/sign-in");
 		},
 		async close() {
@@ -240,9 +251,9 @@ J["signup-email"] = {
 		t.eq("subject carries the code", mail.subject, "###### is your Ditto code");
 		t.eq("body states the expiry", mail.text.includes(`It expires in ${CODE_EXPIRES_IN} seconds.`), true);
 		await t.enterCode(page, await latestCode(email));
-		await page.getByRole("heading", { name: /^Welcome back/ }).waitFor();
+		await t.workspace(page);
 		await t.proof(page, "home");
-		t.eq("home heading", await t.heading(page), "Welcome back, Ada Lovelace");
+		await t.accountName(page, "Ada Lovelace");
 		const user = userByEmail(email);
 		t.eq("D1 user names", [user?.name, user?.first_name, user?.last_name], ["Ada Lovelace", "Ada", "Lovelace"]);
 		t.eq("D1 sign-in methods", methodsOf(user.id), ["email"]);
@@ -259,12 +270,13 @@ J["signup-change-email"] = {
 		await t.signUpForm(page, { ...names, email: typo });
 		await page.getByRole("button", { name: "Use a different email" }).click();
 		await t.proof(page, "form-again");
-		t.eq("names are kept", await page.getByLabel("First name").inputValue(), "Ada");
+		t.eq("first name is kept", await page.getByLabel("First name").inputValue(), names.firstName);
+		t.eq("last name is kept", await page.getByLabel("Last name").inputValue(), names.lastName);
 		await page.getByLabel("Email address").fill(fixed);
 		await page.getByRole("button", { name: "Continue with email" }).click();
 		await t.sees(page, fixed);
 		await t.enterCode(page, await latestCode(fixed));
-		await page.getByRole("heading", { name: /^Welcome back/ }).waitFor();
+		await t.workspace(page);
 		await t.proof(page, "home");
 		t.eq("D1 account under the corrected address", userByEmail(fixed)?.email, fixed);
 		t.eq("D1 has no account for the mistyped address", userByEmail(typo), null);
@@ -304,7 +316,7 @@ J["signin-email"] = {
 		await t.proof(laptop.page, "code-step");
 		const code = await latestCode(email);
 		await t.enterCode(laptop.page, code);
-		await laptop.page.getByRole("heading", { name: "Welcome back, Ada Lovelace" }).waitFor();
+		await t.accountName(laptop.page, "Ada Lovelace");
 		await t.proof(laptop.page, "home");
 		t.eq("same Ditto account", (await t.session(laptop.context))?.user.id, id);
 		t.eq("D1 sessions (sign-up + sign-in)", sessionCount(id), 2);
@@ -382,7 +394,7 @@ J["code-resend"] = {
 			t.saw("replaced code rejected", true);
 		}
 		await t.enterCode(page, fresh);
-		await page.getByRole("heading", { name: /^Welcome back/ }).waitFor();
+		await t.workspace(page);
 		t.eq("D1 account created by the new code", userByEmail(email)?.email, email);
 	},
 };
@@ -411,7 +423,7 @@ J["github-signup"] = {
 		const { page } = await t.visitor();
 		await t.continueWith(page, "GitHub", github);
 		await t.proof(page, "home");
-		t.eq("home heading", await t.heading(page), `Welcome back, ${github.name}`);
+		await t.accountName(page, github.name);
 		const user = userByEmail(github.email);
 		t.eq("D1 name from GitHub, no split", [user?.name, user?.first_name, user?.last_name], [github.name, null, null]);
 		t.eq("D1 methods", methodsOf(user.id), ["github"]);
@@ -443,7 +455,7 @@ J["github-no-name"] = {
 		const { page } = await t.visitor();
 		await t.continueWith(page, "GitHub", github);
 		await t.proof(page, "home");
-		t.eq("home greets by login", await t.heading(page), `Welcome back, ${github.login}`);
+		await t.accountName(page, github.login);
 	},
 };
 
@@ -466,7 +478,7 @@ J["google-signup"] = {
 		const { page } = await t.visitor();
 		await t.continueWith(page, "Google", google, "/sign-up");
 		await t.proof(page, "home");
-		t.eq("home heading", await t.heading(page), `Welcome back, ${google.name}`);
+		await t.accountName(page, google.name);
 		const user = userByEmail(google.email);
 		t.eq("D1 keeps Google's names", [user?.name, user?.first_name, user?.last_name], [google.name, google.given_name, google.family_name]);
 		t.eq("D1 methods", methodsOf(user.id), ["google"]);
@@ -536,7 +548,7 @@ J["link-github"] = {
 		t.eq("D1 methods", methodsOf(id), ["github", "google"]);
 		const viaGitHub = await t.visitor();
 		await t.continueWith(viaGitHub.page, "GitHub", github);
-		t.eq("GitHub opens the original Google profile", await t.heading(viaGitHub.page), `Welcome back, ${google.name}`);
+		await t.accountName(viaGitHub.page, google.name);
 	},
 };
 
@@ -565,7 +577,7 @@ J["link-email"] = {
 		t.eq("D1 methods", methodsOf(id), ["email", "github"]);
 		await t.requestSignIn(stranger.page, email);
 		await t.enterCode(stranger.page, await latestCode(email));
-		await stranger.page.getByRole("heading", { name: /^Welcome back/ }).waitFor();
+		await t.workspace(stranger.page);
 		await t.proof(stranger.page, "home-via-email");
 		t.eq("email sign-in opens the same account", (await t.session(stranger.context))?.user.id, id);
 		await t.emails(email);
@@ -616,7 +628,7 @@ J["protected-routes"] = {
 			const r = await fetch(`${APP}${p}`, { redirect: "manual" });
 			t.eq(`${p} signed out → `, [r.status >= 300 && r.status < 400, new URL(r.headers.get("location") ?? "", APP).pathname], [true, "/sign-in"]);
 		}
-		for (const p of ["/design", "/design/auth", "/design.md"]) {
+		for (const p of ["/design", "/design/auth", "/design/workspace?state=opened", "/design/site-request?state=waiting", "/design.md"]) {
 			t.eq(`${p} public`, (await fetch(`${APP}${p}`, { redirect: "manual" })).status, 200);
 		}
 		const { page } = await t.visitor();

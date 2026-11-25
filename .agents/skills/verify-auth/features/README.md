@@ -1,6 +1,6 @@
 # Auth verification map
 
-This map is the maintained source for what Ditto's authentication does, from the user's side. Read this index before driving auth, then use the matching feature file as the recipe. Every behaviour traces back to issue #3.
+This map is the maintained source for what Ditto's authentication does, from the user's side. Read this index before driving auth, then use the matching feature file as the recipe. Issue #3 defines the auth flows. Issue #17 supplies the workspace owners reach after sign-in.
 
 ## Baseline preconditions
 
@@ -10,7 +10,7 @@ This map is the maintained source for what Ditto's authentication does, from the
 
 ## Driving conventions
 
-- Handles are accessible names and visible copy, for example the buttons `Continue with email`, `Continue with GitHub`, `Link Google`, `Sign out` and `Back to Settings`, and the labels `First name`, `Email address` and `Code`. Filling all six digits of `Code` submits the code.
+- Handles are accessible names and visible copy, for example the buttons `Continue with email`, `Continue with GitHub`, `Link Google` and `Back to Settings`, the `Sign out` menu item, and the labels `First name`, `Email address` and `Code`. Filling all six digits of `Code` submits the code.
 - What the fake consent screen does next is queued before the click: `POST <upstream>/__github/next` or `POST <upstream>/__google/next`, with an identity or `{"cancel":true}`. With nothing queued, the screen cancels.
 - Codes come from `GET <upstream>/__emails?to=<address>`, and the newest email wins.
 - Run journeys with `auth.sh check --only <id>[,<id>]`.
@@ -33,4 +33,4 @@ This map is the maintained source for what Ditto's authentication does, from the
 
 ## Not covered here
 
-The Vitest suite in `apps/web/tests/auth/` already checks these at the HTTP or race level: concurrent code submission, send and verify throttling, Resend delivery failure, untrusted origins and return URLs, forged OAuth state, disabled password and unlink endpoints, and session changes in the middle of linking. Run it with `pnpm exec vp test run --project auth`. It uses its own stage on port 1338.
+The Vitest suite in `apps/web/tests/auth/` already checks these at the HTTP or race level: concurrent code submission, send and verify throttling, Resend delivery failure, untrusted origins and return URLs, forged OAuth state, disabled password and unlink endpoints, and session changes in the middle of linking. The browser tests in `last-used.test.ts` cover the Last used badge. Run it with `pnpm exec vp test run --project auth`. It uses its own stage on port 1338.

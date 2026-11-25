@@ -72,6 +72,7 @@ cmd_up() {
 		cd "$stage" && exec env CI=true \
 			BETTER_AUTH_URL="$app" \
 			BETTER_AUTH_SECRET="verify-auth-only-secret-not-for-any-real-stage" \
+			COOKIE_ENCRYPTION_KEY=verify-auth-only-key COMPUTER_IDLE_SECONDS=300 \
 			GITHUB_CLIENT_ID=test-github-client GITHUB_CLIENT_SECRET=test-github-secret \
 			GOOGLE_CLIENT_ID=test-google-client GOOGLE_CLIENT_SECRET=test-google-secret \
 			OAUTH_UPSTREAM="$upstream" \
