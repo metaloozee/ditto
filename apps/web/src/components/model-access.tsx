@@ -1,6 +1,6 @@
-// Prototype of model access (#18): the Settings section, the pair select, bot settings and the
-// interruption card. Nothing here talks to the Credentials or Bot objects yet: the choices only
-// change the state their callers hold.
+// Model access (#18): the Settings section, the pair select, bot settings and the interruption
+// card. Nothing here talks to the Credentials or Bot objects: each surface reports the owner's
+// choices to its caller, which Settings sends on and `/design/models` only keeps.
 
 import { Popover } from "@base-ui/react/popover";
 import {
@@ -557,7 +557,8 @@ function ConnectionRow({
 	onReconnect,
 }: {
 	connection: Connection;
-	onDisconnect: () => void;
+	/** Without it the row offers no Disconnect. */
+	onDisconnect?: () => void;
 	onCheck: () => Promise<void> | void;
 	onReconnect: () => void;
 }) {
@@ -565,7 +566,7 @@ function ConnectionRow({
 	const [checking, setChecking] = useState(false);
 	const name = PROVIDER_NAMES[connection.provider];
 	const title = connection.provider === "opencode" ? "OpenCode API key" : name;
-	const action = view.action;
+	const action = view.action?.kind === "disconnect" && !onDisconnect ? undefined : view.action;
 	return (
 		<Row
 			provider={connection.provider}
@@ -580,7 +581,7 @@ function ConnectionRow({
 							variant={action.primary ? "default" : "outline"}
 							loading={checking}
 							onClick={async () => {
-								if (action.kind === "disconnect") return onDisconnect();
+								if (action.kind === "disconnect") return onDisconnect?.();
 								if (action.kind === "reconnect") return onReconnect();
 								setChecking(true);
 								try {
@@ -608,9 +609,11 @@ export interface ModelAccessSectionProps {
 	opencodeModels: readonly string[];
 	defaultPair: Pair | undefined;
 	onDefaultPairChange: (pair: Pair) => void;
-	onConnectKey: (key: string, model: string) => Promise<void> | void;
+	/** Answers why the key wasn't stored, shown beside the field, or nothing once it is. */
+	onConnectKey: (key: string, model: string) => Promise<string | void> | void;
 	onConnectChatGPT: () => void;
-	onDisconnect: (connectionId: string) => void;
+	/** Without it no connection offers Disconnect. */
+	onDisconnect?: (connectionId: string) => void;
 	onCheck: (connectionId: string) => Promise<void> | void;
 	onReconnect: (connectionId: string) => void;
 	/** For `/design`: open with the key form or the disconnect confirmation showing. */
@@ -644,7 +647,7 @@ export function ModelAccessSection({
 	const leaving = access.connections.find((each) => each.id === disconnecting);
 	const rowProps = (connection: Connection) => ({
 		connection,
-		onDisconnect: () => setDisconnecting(connection.id),
+		onDisconnect: onDisconnect && (() => setDisconnecting(connection.id)),
 		onCheck: () => onCheck(connection.id),
 		onReconnect: () => onReconnect(connection.id),
 	});
@@ -716,8 +719,9 @@ export function ModelAccessSection({
 						onOpenChange={setConnecting}
 						models={opencodeModels}
 						onConnect={async (key, model) => {
-							await onConnectKey(key, model);
-							setConnecting(false);
+							const refused = await onConnectKey(key, model);
+							if (!refused) setConnecting(false);
+							return refused;
 						}}
 					/>
 				)}
@@ -732,7 +736,7 @@ export function ModelAccessSection({
 						<Button
 							variant="destructive"
 							onClick={() => {
-								if (leaving) onDisconnect(leaving.id);
+								if (leaving) onDisconnect?.(leaving.id);
 								setDisconnecting(undefined);
 							}}
 						>
@@ -758,7 +762,7 @@ function ConnectKeyPanel({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	models: readonly string[];
-	onConnect: (key: string, model: string) => Promise<void>;
+	onConnect: (key: string, model: string) => Promise<string | void>;
 }) {
 	return (
 		<CardPanel className="gap-0 py-0">
@@ -791,7 +795,7 @@ function ConnectKeyForm({
 }: {
 	models: readonly string[];
 	onCancel: () => void;
-	onConnect: (key: string, model: string) => Promise<void>;
+	onConnect: (key: string, model: string) => Promise<string | void>;
 }) {
 	const id = useId();
 	const field = useRef<HTMLInputElement>(null);
@@ -799,7 +803,14 @@ function ConnectKeyForm({
 	const [model, setModel] = useState(models[0] ?? "");
 	const [attempted, setAttempted] = useState(false);
 	const [pending, setPending] = useState(false);
-	const error = attempted && !key.trim() ? "Paste your OpenCode API key." : undefined;
+	/** Why the last key sent wasn't stored, until the key changes. */
+	const [refused, setRefused] = useState<string>();
+	const error = attempted && !key.trim() ? "Paste your OpenCode API key." : refused;
+	const refocus = () => {
+		if (!field.current) return;
+		shake(field.current);
+		field.current.focus();
+	};
 	return (
 		<form
 			noValidate
@@ -807,16 +818,14 @@ function ConnectKeyForm({
 			onSubmit={async (event) => {
 				event.preventDefault();
 				setAttempted(true);
-				if (!key.trim()) {
-					if (field.current) {
-						shake(field.current);
-						field.current.focus();
-					}
-					return;
-				}
+				if (!key.trim()) return refocus();
 				setPending(true);
 				try {
-					await onConnect(key.trim(), model);
+					const reason = await onConnect(key.trim(), model);
+					if (reason) {
+						setRefused(reason);
+						refocus();
+					}
 				} finally {
 					setPending(false);
 				}
@@ -837,7 +846,10 @@ function ConnectKeyForm({
 					enterKeyHint="done"
 					className="font-mono"
 					value={key}
-					onChange={(event) => setKey(event.target.value)}
+					onChange={(event) => {
+						setKey(event.target.value);
+						setRefused(undefined);
+					}}
 					aria-invalid={error ? true : undefined}
 					aria-describedby={`${id}-key-note`}
 				/>
