@@ -246,7 +246,8 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 				models: OPENCODE_MODELS,
 			});
 		}
-		if (chatgpt) {
+		// A gate that closed after the import shows the plan as not offered, as before it.
+		if (chatgpt && (await this.offersChatGPT())) {
 			const health = await troubled("chatgpt");
 			connections.push({
 				id: "chatgpt",
@@ -255,9 +256,13 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 				models: CHATGPT_MODELS,
 			});
 		}
+		const defaultPair = await this.#defaultPair(included);
+		const shown =
+			defaultPair?.connectionId === INCLUDED ||
+			connections.some((each) => each.id === defaultPair?.connectionId);
 		return {
 			connections,
-			defaultPair: await this.#defaultPair(included),
+			defaultPair: shown ? defaultPair : null,
 			...(included ? { included: included.name } : {}),
 		};
 	}
@@ -597,6 +602,8 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	 * expired token is rotated first, so a failed rotation is retried by these probes too.
 	 */
 	async #probeChatGPT(trouble: Trouble): Promise<"ok" | Fault | null> {
+		// Not offered any more: nothing goes to OpenAI until the gate opens again.
+		if (!(await this.offersChatGPT())) return null;
 		let refused: string | undefined;
 		for (;;) {
 			const token = await this.#chatgptToken(trouble.accountId, refused);

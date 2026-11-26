@@ -2,7 +2,13 @@ import type { BrowserContext, Page } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
 import { continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
-import { chatgptCredential, chatgptRequests } from "./chatgpt.ts";
+import {
+	chatgptCredential,
+	chatgptRefreshes,
+	chatgptRequests,
+	endRefreshTrouble,
+	startRefreshTrouble,
+} from "./chatgpt.ts";
 import { openCodeKey, openCodeRequests } from "./opencode.ts";
 import { workersAiRequests } from "./workers-ai.ts";
 
@@ -133,6 +139,27 @@ describe("a gate that closes", () => {
 		expect(refused.status).toBe(409);
 		expect(JSON.parse(refused.body)).toEqual({ error: "Connect a model in Settings first" });
 		await expect(chatgptRequests(credential.access)).resolves.toEqual([]);
+	});
+
+	it("shows an imported plan as not offered, and stops probing it", async () => {
+		const { page, context, workspaceId, botId } = await owner();
+		await deployAs(context, { mode: "self-deployed", license: LICENSE });
+		const credential = await chatgptCredential({ expired: true });
+		expect((await importCredential(context, credential)).status()).toBe(204);
+		await startRefreshTrouble({ status: 503 });
+		try {
+			// The rotation meets an outage, so the plan is probed with backoff.
+			expect((await turn(context, workspaceId, botId, "Hello")).status).toBe(202);
+
+			await deployAs(context, { mode: "hosted", license: LICENSE });
+			await expectNotOffered(page);
+			await expect(connections(context)).resolves.toEqual([]);
+			const rotations = (await chatgptRefreshes(credential.refresh)).length;
+			await new Promise((resolve) => setTimeout(resolve, 3000));
+			await expect(chatgptRefreshes(credential.refresh)).resolves.toHaveLength(rotations);
+		} finally {
+			await endRefreshTrouble();
+		}
 	});
 });
 
