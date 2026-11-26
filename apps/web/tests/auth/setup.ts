@@ -42,11 +42,7 @@ async function waitForApp(exited: Promise<number | null>) {
 	throw new Error(`The test stage didn't answer at ${APP_URL}`);
 }
 
-/**
- * Starts the test stage — the real Worker on a freshly migrated local D1 —
- * pointed at local GitHub, Google and Resend fakes with test credentials.
- */
-export default async function setup(project: TestProject) {
+async function startStage() {
 	const upstream = await startFakeUpstream();
 	await rm(`${repoRoot}.alchemy/state/ditto/test`, { recursive: true, force: true });
 
@@ -89,7 +85,37 @@ export default async function setup(project: TestProject) {
 		throw error;
 	}
 
-	project.provide("appUrl", APP_URL);
-	project.provide("upstreamUrl", upstream.url);
-	return stop;
+	return { upstreamUrl: upstream.url, stop };
+}
+
+// Vitest runs this setup once per project that lists it, so the stage lives on
+// `globalThis`: the first project starts it and the last one to finish stops it.
+const shared = globalThis as {
+	dittoTestStage?: { started: ReturnType<typeof startStage>; users: number };
+};
+
+/**
+ * Starts the test stage — the real Worker on a freshly migrated local D1 —
+ * pointed at local GitHub, Google and Resend fakes with test credentials.
+ */
+export default async function setup(project: TestProject) {
+	const stage = (shared.dittoTestStage ??= { started: startStage(), users: 0 });
+	stage.users += 1;
+	const release = async () => {
+		stage.users -= 1;
+		if (stage.users > 0) return;
+		shared.dittoTestStage = undefined;
+		const started = await stage.started.catch(() => undefined);
+		await started?.stop();
+	};
+
+	try {
+		const { upstreamUrl } = await stage.started;
+		project.provide("appUrl", APP_URL);
+		project.provide("upstreamUrl", upstreamUrl);
+	} catch (error) {
+		await release();
+		throw error;
+	}
+	return release;
 }

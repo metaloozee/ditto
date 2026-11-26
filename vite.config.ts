@@ -8,17 +8,19 @@ const ignorePatterns = [
 	".cursor/**",
 ];
 
-const authTests = {
+// One Worker and database serve every file of both projects: the setup starts the
+// stage once, and the group order keeps the two projects from running side by side.
+const stageTests = (name: string, groupOrder: number) => ({
 	test: {
-		name: "auth",
-		include: ["apps/web/tests/auth/*.test.ts", "apps/web/tests/workspace/*.test.ts"],
+		name,
+		include: [`apps/web/tests/${name}/*.test.ts`],
 		globalSetup: ["apps/web/tests/auth/setup.ts"],
-		// One Worker and database serve every file.
 		fileParallelism: false,
+		sequence: { groupOrder },
 		testTimeout: 30_000,
 		hookTimeout: 30_000,
 	},
-};
+});
 
 const feasibilityTests = {
 	// The Containers trial's Durable Object extends @cloudflare/containers, which imports
@@ -51,7 +53,9 @@ export default defineConfig({
 		projects: [
 			{ test: { name: "web", include: ["apps/web/tests/*.test.ts"] } },
 			// Browser tests stay local: CI minutes are scarce.
-			...(process.env.CI ? [] : [authTests, feasibilityTests]),
+			...(process.env.CI
+				? []
+				: [stageTests("auth", 0), stageTests("workspace", 1), feasibilityTests]),
 		],
 	},
 	staged: { "*.{js,ts,jsx,tsx}": "vp check --fix" },
