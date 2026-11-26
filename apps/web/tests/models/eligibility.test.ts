@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
 import { chatgptCredential, chatgptRequests } from "./chatgpt.ts";
 import { openCodeKey, openCodeRequests } from "./opencode.ts";
+import { workersAiRequests } from "./workers-ai.ts";
 
 const modelAccess = (page: Page) => page.getByRole("region", { name: "Model access" });
 
@@ -148,5 +149,25 @@ describe("other model access", () => {
 		expect((await turn(context, workspaceId, botId, "Hello")).status).toBe(200);
 		// The connect check, then the turn.
 		await expect(openCodeRequests(key)).resolves.toHaveLength(2);
+	});
+
+	it("keeps the included model running a turn with the ChatGPT gates closed, in both modes", async () => {
+		for (const mode of ["self-deployed", "hosted"] as const) {
+			const { context, workspaceId, botId } = await owner();
+			const session = (await (await context.request.get("/api/auth/get-session")).json()) as {
+				user: { id: string };
+			};
+			await deployAs(context, { mode });
+			const offered = await context.request.put("/api/models/__test/included", {
+				data: { offered: true },
+			});
+			expect(offered.status()).toBe(204);
+
+			const sent = await turn(context, workspaceId, botId, "What time is it?");
+			expect(sent.status).toBe(200);
+			expect(sent.body).toContain('"status":"completed"');
+			// The tool call, then the answer with its result.
+			await expect(workersAiRequests(session.user.id)).resolves.toHaveLength(2);
+		}
 	});
 });
