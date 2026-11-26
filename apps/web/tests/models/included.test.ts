@@ -1,28 +1,13 @@
 import type { BrowserContext, Page } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
-import { continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
+import { open } from "../auth/visitor.ts";
 import { failNextOpenCodeRequest, openCodeKey, openCodeRequests } from "./opencode.ts";
+import { owner } from "./owner.ts";
 import { failNextWorkersAiRequest, workersAiRequests } from "./workers-ai.ts";
 
 const DEEPSEEK = "@cf/deepseek-ai/deepseek-v4.1-flash-1017";
 const GLM = "@cf/zai-org/glm-5.3";
-
-/** A signed-in owner who has opened their workspace, with their account and Chief of Staff. */
-async function owner() {
-	const visitor = await newVisitor();
-	await continueWithGitHub(visitor.page, gitHubUser());
-	const opened = await visitor.context.request.post("/api/workspaces/open");
-	expect(opened.status()).toBe(200);
-	const { workspaceId, chiefOfStaff } = (await opened.json()) as {
-		workspaceId: string;
-		chiefOfStaff: { id: string };
-	};
-	const session = (await (await visitor.context.request.get("/api/auth/get-session")).json()) as {
-		user: { id: string };
-	};
-	return { ...visitor, accountId: session.user.id, workspaceId, botId: chiefOfStaff.id };
-}
 
 /**
  * Whether this account is offered the included model. Stage configuration decides it; the test

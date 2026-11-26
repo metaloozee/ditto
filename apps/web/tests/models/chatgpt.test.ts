@@ -5,16 +5,11 @@ import type { BrowserContext, Page } from "playwright";
 import { describe, expect, inject, it } from "vite-plus/test";
 
 import { CHATGPT_MODELS } from "../../src/lib/model-access.ts";
-import { continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
+import { newVisitor, open } from "../auth/visitor.ts";
 import { chatgptCredential, chatgptRequests, markerOf } from "./chatgpt.ts";
+import { owner } from "./owner.ts";
 
 const modelAccess = (page: Page) => page.getByRole("region", { name: "Model access" });
-
-async function owner() {
-	const visitor = await newVisitor();
-	await continueWithGitHub(visitor.page, gitHubUser());
-	return visitor;
-}
 
 /** Opens the owner's workspace and answers it with its Chief of Staff's ID. */
 async function openWorkspace(context: BrowserContext) {

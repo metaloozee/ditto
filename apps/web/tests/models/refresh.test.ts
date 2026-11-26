@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import type { BrowserContext, Page } from "playwright";
 import { describe, expect, inject, it } from "vite-plus/test";
 
-import { continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
+import { open } from "../auth/visitor.ts";
 import {
 	chatgptCredential,
 	chatgptRefreshes,
@@ -16,24 +16,13 @@ import {
 	revokeRefreshToken,
 	startRefreshTrouble,
 } from "./chatgpt.ts";
+import { addSpecialist, owner } from "./owner.ts";
 
-/** A signed-in owner with their workspace open, its Chief of Staff and one specialist. */
-async function owner() {
-	const visitor = await newVisitor();
-	await continueWithGitHub(visitor.page, gitHubUser());
-	const opened = await visitor.context.request.post("/api/workspaces/open");
-	expect(opened.status()).toBe(200);
-	const { workspaceId, chiefOfStaff } = (await opened.json()) as {
-		workspaceId: string;
-		chiefOfStaff: { id: string };
-	};
-	const specialist = `bot-${crypto.randomUUID()}`;
-	const added = await visitor.context.request.post(
-		`/api/workspaces/${workspaceId}/__test/members`,
-		{ data: { id: specialist, name: "Researcher" } },
-	);
-	expect(added.status()).toBe(204);
-	return { ...visitor, workspaceId, bots: [chiefOfStaff.id, specialist] as const };
+/** A signed-in owner with their Chief of Staff and one specialist. */
+async function ownerOfTwo() {
+	const signedIn = await owner();
+	const specialist = await addSpecialist(signedIn.context, signedIn.workspaceId);
+	return { ...signedIn, bots: [signedIn.botId, specialist] as const };
 }
 
 /** Imports a ChatGPT plan sign-in whose access token has already expired. */
@@ -81,7 +70,7 @@ const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe("an expired ChatGPT plan token", () => {
 	it("is rotated once for two bots asking together, shows Refreshing meanwhile, and both turns succeed", async () => {
-		const { page, context, workspaceId, bots } = await owner();
+		const { page, context, workspaceId, bots } = await ownerOfTwo();
 		const credential = await importExpired(context);
 		await planNextRefresh({ hold: true });
 
@@ -116,7 +105,7 @@ describe("an expired ChatGPT plan token", () => {
 	});
 
 	it("saves the replacement before answering either bot, so an eviction between the two loses nothing", async () => {
-		const { context, workspaceId, bots } = await owner();
+		const { context, workspaceId, bots } = await ownerOfTwo();
 		const credential = await importExpired(context);
 		const evicting = await context.request.post("/api/models/__test/evict-after-rotation");
 		expect(evicting.status()).toBe(204);
@@ -139,7 +128,7 @@ describe("an expired ChatGPT plan token", () => {
 	});
 
 	it("recovers from a lost rotation answer without the owner when OpenAI still takes the old refresh token", async () => {
-		const { context, workspaceId, bots } = await owner();
+		const { context, workspaceId, bots } = await ownerOfTwo();
 		const credential = await importExpired(context);
 		await planNextRefresh({ lose: true, oldStillAccepted: true });
 
@@ -157,7 +146,7 @@ describe("an expired ChatGPT plan token", () => {
 	}, 60_000);
 
 	it("shows Reconnect needed after a lost rotation answer when OpenAI no longer takes the old refresh token", async () => {
-		const { context, workspaceId, bots } = await owner();
+		const { context, workspaceId, bots } = await ownerOfTwo();
 		const credential = await importExpired(context);
 		await planNextRefresh({ lose: true });
 
@@ -170,7 +159,7 @@ describe("an expired ChatGPT plan token", () => {
 	}, 60_000);
 
 	it("shows Reconnect needed for a revoked refresh token, and never tries it again", async () => {
-		const { page, context, workspaceId, bots } = await owner();
+		const { page, context, workspaceId, bots } = await ownerOfTwo();
 		const credential = await importExpired(context);
 		await revokeRefreshToken(credential.refresh);
 
@@ -200,7 +189,7 @@ describe("an expired ChatGPT plan token", () => {
 	])(
 		"shows $label when a rotation meets $status, and retries it with backoff until it answers",
 		async ({ status, state, label }) => {
-			const { page, context, workspaceId, bots } = await owner();
+			const { page, context, workspaceId, bots } = await ownerOfTwo();
 			const credential = await importExpired(context);
 			await startRefreshTrouble({ status });
 
@@ -209,8 +198,7 @@ describe("an expired ChatGPT plan token", () => {
 			await open(page, "/settings");
 			await modelAccess(page).getByText(label, { exact: true }).waitFor();
 
-			// Retries back off: over six seconds, at most one a second, doubling. Asking each second
-			// also keeps the short test session alive.
+			// Retries back off: over six seconds, at most one a second, doubling.
 			for (let second = 0; second < 6; second++) {
 				await pause(1000);
 				await expect(chatgptState(context)).resolves.toBe(state);
@@ -229,7 +217,7 @@ describe("an expired ChatGPT plan token", () => {
 	);
 
 	it("never hands the Bot a refresh token, the original or its replacement", async () => {
-		const { context, workspaceId, bots } = await owner();
+		const { context, workspaceId, bots } = await ownerOfTwo();
 		const credential = await importExpired(context);
 
 		const turn = await post(context, workspaceId, bots[0], "Summarize my week.");
@@ -256,7 +244,7 @@ describe("an expired ChatGPT plan token", () => {
 
 describe("a rotation the owner overtook", () => {
 	it("is dropped when the plan was disconnected meanwhile, and the waiting turn is refused", async () => {
-		const { context, workspaceId, bots } = await owner();
+		const { context, workspaceId, bots } = await ownerOfTwo();
 		const credential = await importExpired(context);
 		await planNextRefresh({ hold: true });
 
@@ -275,7 +263,7 @@ describe("a rotation the owner overtook", () => {
 	});
 
 	it("gives way to a newer import, whose token the waiting turn uses", async () => {
-		const { context, workspaceId, bots } = await owner();
+		const { context, workspaceId, bots } = await ownerOfTwo();
 		const credential = await importExpired(context);
 		await planNextRefresh({ hold: true });
 
@@ -301,7 +289,7 @@ describe("a rotation the owner overtook", () => {
 
 describe("an access token OpenAI refuses before it expires", () => {
 	it("is rotated once, and the turn carries on with the replacement", async () => {
-		const { context, workspaceId, bots } = await owner();
+		const { context, workspaceId, bots } = await ownerOfTwo();
 		const credential = await chatgptCredential();
 		const imported = await context.request.post("/api/models/chatgpt", { data: { credential } });
 		expect(imported.status()).toBe(204);
@@ -317,7 +305,7 @@ describe("an access token OpenAI refuses before it expires", () => {
 	});
 
 	it("needs a reconnect once the rotation is refused too", async () => {
-		const { context, workspaceId, bots } = await owner();
+		const { context, workspaceId, bots } = await ownerOfTwo();
 		const credential = await chatgptCredential();
 		const imported = await context.request.post("/api/models/chatgpt", { data: { credential } });
 		expect(imported.status()).toBe(204);

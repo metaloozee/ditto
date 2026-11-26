@@ -2,7 +2,7 @@ import type { BrowserContext, Page } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
 import { stateView } from "../../src/lib/model-access.ts";
-import { continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
+import { open } from "../auth/visitor.ts";
 import {
 	limitOpenCode,
 	liftOpenCodeLimit,
@@ -11,24 +11,12 @@ import {
 	openCodeRequests,
 	replyToNextOpenCodeTurn,
 } from "./opencode.ts";
+import { owner } from "./owner.ts";
 
 const PHONE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
 
 /** What a Credentials probe asks, and the key check on connect too. */
 const PROBE = "Reply with exactly one word: pong";
-
-/** A signed-in owner who has opened their personal workspace, with its Chief of Staff's ID. */
-async function owner(options: Parameters<typeof newVisitor>[0] = {}) {
-	const visitor = await newVisitor(options);
-	await continueWithGitHub(visitor.page, gitHubUser());
-	const opened = await visitor.context.request.post("/api/workspaces/open");
-	expect(opened.status()).toBe(200);
-	const { workspaceId, chiefOfStaff } = (await opened.json()) as {
-		workspaceId: string;
-		chiefOfStaff: { id: string };
-	};
-	return { ...visitor, workspaceId, botId: chiefOfStaff.id };
-}
 
 /** Connects a fresh OpenCode key, which becomes the default pair. */
 async function connectKey(context: BrowserContext, model = "gpt-5.4-mini") {

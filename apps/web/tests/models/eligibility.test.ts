@@ -1,7 +1,7 @@
 import type { BrowserContext, Page } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
-import { continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
+import { open } from "../auth/visitor.ts";
 import {
 	chatgptCredential,
 	chatgptRefreshes,
@@ -10,22 +10,10 @@ import {
 	startRefreshTrouble,
 } from "./chatgpt.ts";
 import { openCodeKey, openCodeRequests } from "./opencode.ts";
+import { owner } from "./owner.ts";
 import { workersAiRequests } from "./workers-ai.ts";
 
 const modelAccess = (page: Page) => page.getByRole("region", { name: "Model access" });
-
-/** A signed-in owner who has opened their personal workspace, with its Chief of Staff's ID. */
-async function owner() {
-	const visitor = await newVisitor();
-	await continueWithGitHub(visitor.page, gitHubUser());
-	const opened = await visitor.context.request.post("/api/workspaces/open");
-	expect(opened.status()).toBe(200);
-	const { workspaceId, chiefOfStaff } = (await opened.json()) as {
-		workspaceId: string;
-		chiefOfStaff: { id: string };
-	};
-	return { ...visitor, workspaceId, botId: chiefOfStaff.id };
-}
 
 interface Deployment {
 	mode: "self-deployed" | "hosted";

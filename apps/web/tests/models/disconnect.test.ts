@@ -1,23 +1,11 @@
 import type { BrowserContext, Page } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
-import { clickSignOut, continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
+import { clickSignOut, continueWithGitHub, newVisitor, open } from "../auth/visitor.ts";
 import { limitOpenCode, openCodeKey, openCodeRequests } from "./opencode.ts";
+import { owner } from "./owner.ts";
 
 const modelAccess = (page: Page) => page.getByRole("region", { name: "Model access" });
-
-/** A signed-in owner who has opened their personal workspace, with its Chief of Staff's ID. */
-async function owner(user = gitHubUser()) {
-	const visitor = await newVisitor();
-	await continueWithGitHub(visitor.page, user);
-	const opened = await visitor.context.request.post("/api/workspaces/open");
-	expect(opened.status()).toBe(200);
-	const { workspaceId, chiefOfStaff } = (await opened.json()) as {
-		workspaceId: string;
-		chiefOfStaff: { id: string };
-	};
-	return { ...visitor, user, workspaceId, botId: chiefOfStaff.id };
-}
 
 /** Connects a fresh OpenCode key on `model`, which becomes the default pair. */
 async function connectKey(context: BrowserContext, model = "gpt-5.4-mini") {

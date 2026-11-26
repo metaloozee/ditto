@@ -3,28 +3,16 @@ import { readFile } from "node:fs/promises";
 import type { BrowserContext, Page } from "playwright";
 import { describe, expect, inject, it } from "vite-plus/test";
 
-import { continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
+import { newVisitor, open } from "../auth/visitor.ts";
 import {
 	openCodeKey,
 	openCodeRequests,
 	openCodeTurnHungUp,
 	replyToNextOpenCodeTurn,
 } from "./opencode.ts";
+import { owner } from "./owner.ts";
 
 const PHONE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
-
-/** A signed-in owner who has opened their personal workspace, with its Chief of Staff's ID. */
-async function owner(options: Parameters<typeof newVisitor>[0] = {}) {
-	const visitor = await newVisitor(options);
-	await continueWithGitHub(visitor.page, gitHubUser());
-	const opened = await visitor.context.request.post("/api/workspaces/open");
-	expect(opened.status()).toBe(200);
-	const { workspaceId, chiefOfStaff } = (await opened.json()) as {
-		workspaceId: string;
-		chiefOfStaff: { id: string };
-	};
-	return { ...visitor, workspaceId, botId: chiefOfStaff.id };
-}
 
 /** Connects a fresh OpenCode key on `model`, which becomes the default pair. */
 async function connectKey(context: BrowserContext, model = "gpt-5.4-mini") {

@@ -4,16 +4,11 @@ import { readFile } from "node:fs/promises";
 import type { BrowserContext, Page } from "playwright";
 import { describe, expect, inject, it } from "vite-plus/test";
 
-import { continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
+import { gitHubUser, newVisitor, open } from "../auth/visitor.ts";
 import { failNextOpenCodeRequest, openCodeKey, openCodeRequests } from "./opencode.ts";
+import { owner } from "./owner.ts";
 
 const modelAccess = (page: Page) => page.getByRole("region", { name: "Model access" });
-
-async function owner(user = gitHubUser()) {
-	const visitor = await newVisitor();
-	await continueWithGitHub(visitor.page, user);
-	return visitor;
-}
 
 /** Fills the connect form in Settings with `key` on `model` and presses Connect. */
 async function connectInSettings(page: Page, key: string, model: string) {
@@ -56,7 +51,7 @@ const NOTHING = { connections: [], defaultPair: null };
 describe("connecting an OpenCode API key", () => {
 	it("shows Connected and the chosen pair as the default after a reload and on a second device", async () => {
 		const user = gitHubUser();
-		const first = await owner(user);
+		const first = await owner({ user });
 		const key = await openCodeKey();
 
 		await connectInSettings(first.page, key, "gpt-5.4");
@@ -67,7 +62,7 @@ describe("connecting an OpenCode API key", () => {
 		await open(first.page, "/settings");
 		await expect(shown(first.page)).resolves.toEqual(expected);
 
-		const second = await owner(user);
+		const second = await owner({ user });
 		await open(second.page, "/settings");
 		await expect(shown(second.page)).resolves.toEqual(expected);
 	});
