@@ -100,6 +100,10 @@ async function testHook(request: Request, admitted: Admitted, hook: string): Pro
 	if (hook === "members" && method === "GET") {
 		return Response.json(await admitted.workspace.members());
 	}
+	if (hook === "members" && method === "POST") {
+		await admitted.workspace.addSpecialist((await request.json()) as Member);
+		return new Response(null, { status: 204 });
+	}
 	if (hook === "bot-list" && (method === "POST" || method === "DELETE")) {
 		// Writes the D1 bot list behind the object's back, as a failed or stray write would.
 		const db = drizzle(env.DB);
