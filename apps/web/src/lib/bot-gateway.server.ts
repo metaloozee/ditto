@@ -34,7 +34,8 @@ export async function memberBot(admitted: Admitted, botId: string) {
 
 /**
  * Answers `/bots/<botId>/…` under an admitted workspace: a turn (`POST /turns`, an SSE stream)
- * Stop (`POST /stop`) and the bot's own pair (`GET` and `PUT /model`). Reaches the bot only once the workspace's membership names it, and
+ * or a queued message (202), what still waits (`GET /turns`), Stop (`POST /stop`) and the
+ * bot's own pair (`GET` and `PUT /model`). Reaches the bot only once the workspace's membership names it, and
  * gives it the account from the session. Leaves other paths alone.
  */
 export async function botRoute(
@@ -64,9 +65,17 @@ export async function botRoute(
 			const { status, error } = REFUSED[started.refused];
 			return Response.json({ error }, { status });
 		}
+		// Waiting behind an interrupted turn: the message runs once its connection recovers.
+		if ("queued" in started) return Response.json({ queued: started.queued }, { status: 202 });
 		return new Response(started.stream, {
 			headers: { "content-type": "text/event-stream", "cache-control": "no-store" },
 		});
+	}
+	if (path === "/turns" && method === "GET") {
+		// `?ids=a,b`: the turns this page shows, besides the unfinished turn and the queue.
+		const ids = new URL(request.url).searchParams.get("ids")?.split(",").filter(Boolean) ?? [];
+		const pending: Awaited<ReturnType<BotRpc["pending"]>> = await bot.pending(ids);
+		return Response.json(pending, { headers: { "cache-control": "no-store" } });
 	}
 	if (path === "/stop" && method === "POST") {
 		const stopped: boolean = await bot.stop();

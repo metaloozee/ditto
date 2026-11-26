@@ -71,6 +71,16 @@ async function route(request: Request, accountId: string, rest: string): Promise
 			? new Response(null, { status: 204 })
 			: Response.json({ error: "No such connection" }, { status: 404 });
 	}
+	const checked = /^\/([a-z]+)\/check$/.exec(rest)?.[1];
+	if (checked && method === "POST") {
+		const state: Awaited<ReturnType<CredentialsRpc["check"]>> = await credentials.check(
+			accountId,
+			checked,
+		);
+		return state
+			? Response.json({ state })
+			: Response.json({ error: "No such connection" }, { status: 404 });
+	}
 	if (env.TEST_HOOKS === "on" && rest === "/__test/stored" && method === "GET") {
 		return Response.json(await credentials.stored());
 	}

@@ -1,23 +1,31 @@
-import type { TurnEvent, TurnStatus } from "#/bot-rpc.ts";
+import type { Pending, TurnEvent, TurnStatus } from "#/bot-rpc.ts";
 
 const botPath = (workspaceId: string, botId: string) =>
 	`/api/workspaces/${workspaceId}/bots/${botId}`;
 
 /**
  * Sends `message` to the bot and calls `onDelta` with each piece of the reply as it streams
- * in. Settles with how the turn ended: "refused" when it never started.
+ * in. Settles with how the turn ended: "refused" when it never started, "queued" when it
+ * waits behind an interrupted turn. `onStart` gets the turn's ID, which a queued message's
+ * turn takes too.
  */
 export async function sendTurn(
 	workspaceId: string,
 	botId: string,
 	message: string,
 	onDelta: (text: string) => void,
-): Promise<Exclude<TurnStatus, "running"> | "refused"> {
+	onStart?: (turnId: string) => void,
+): Promise<Exclude<TurnStatus, "running"> | "refused" | "queued"> {
 	const response = await fetch(`${botPath(workspaceId, botId)}/turns`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify({ message }),
 	}).catch(() => null);
+	if (response?.status === 202) {
+		const { queued } = (await response.json()) as { queued: string };
+		onStart?.(queued);
+		return "queued";
+	}
 	if (!response?.ok || !response.body) return "refused";
 
 	const lines = response.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -32,6 +40,7 @@ export async function sendTurn(
 			for (const raw of events) {
 				if (!raw.startsWith("data: ")) continue;
 				const event = JSON.parse(raw.slice("data: ".length)) as TurnEvent;
+				if (event.type === "start") onStart?.(event.turnId);
 				if (event.type === "delta") onDelta(event.text);
 				if (event.type === "end") return event.status;
 			}
@@ -44,4 +53,17 @@ export async function sendTurn(
 /** Asks the bot to stop its running turn; the turn's stream then ends as "stopped". */
 export async function stopTurn(workspaceId: string, botId: string): Promise<void> {
 	await fetch(`${botPath(workspaceId, botId)}/stop`, { method: "POST" }).catch(() => null);
+}
+
+/** The turns named by `ids`, with the bot's unfinished turn and queue. Null when unreachable. */
+export async function pendingTurns(
+	workspaceId: string,
+	botId: string,
+	ids: string[],
+): Promise<Pending | null> {
+	const query = ids.length ? `?ids=${ids.join(",")}` : "";
+	const response = await fetch(`${botPath(workspaceId, botId)}/turns${query}`, {
+		cache: "no-store",
+	}).catch(() => null);
+	return response?.ok ? ((await response.json()) as Pending) : null;
 }

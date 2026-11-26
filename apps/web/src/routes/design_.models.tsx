@@ -222,7 +222,11 @@ function SettingsPrototype({ state }: { state: (typeof SETTINGS)[number] }) {
 							await wait(900);
 							setAccess((current) => ({
 								...current,
-								connections: [opencode("Connected"), ...current.connections],
+								// A reconnect replaces the key the provider stopped accepting.
+								connections: [
+									opencode("Connected"),
+									...current.connections.filter((each) => each.provider !== "opencode"),
+								],
 							}));
 							setDefaultPair((current) => current ?? { connectionId: "oc", model });
 						}}

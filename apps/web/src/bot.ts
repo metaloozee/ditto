@@ -3,42 +3,47 @@ import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { DurableObject } from "cloudflare:workers";
 
-import type { BotRpc, Turn, TurnEvent, TurnRefusal, TurnStatus } from "./bot-rpc.ts";
-import type { CredentialsRpc, Grant } from "./credentials-rpc.ts";
+import type {
+	BotRpc,
+	Pending,
+	Queued,
+	Turn,
+	TurnEvent,
+	TurnRefusal,
+	TurnStatus,
+} from "./bot-rpc.ts";
+import type { CredentialsRpc, Fault, Grant } from "./credentials-rpc.ts";
 import type { Credentials } from "./credentials.ts";
 import type { AuthEnv } from "./lib/auth.ts";
 import type { Pair } from "./lib/model-access.ts";
+import { openaiFetch } from "./lib/openai-upstream.ts";
+import { faultOf } from "./lib/provider-fault.ts";
 
 type Granted = Exclude<Grant, { refused: unknown }>;
+type Ended = Exclude<TurnStatus, "running">;
 
 const encoder = new TextEncoder();
 
 /** The bot's instructions, sent with every turn until bots carry their own. */
 const INSTRUCTIONS = "You are Ditto, the owner's Chief of Staff. Reply plainly and briefly.";
 
-const OPENAI = "https://api.openai.com/";
-
-/**
- * Sends api.openai.com requests to the test stage's fake upstream, as `${upstream}/<host>/<path>`,
- * passed to Pi for one call rather than patched into the global fetch. Undefined off the test stage.
- */
-function openaiUpstream(upstream: string | undefined): typeof fetch | undefined {
-	if (!upstream) return undefined;
-	return (input, init) => {
-		const request = new Request(input, init);
-		if (!request.url.startsWith(OPENAI)) return fetch(request);
-		return fetch(
-			new Request(`${upstream}/api.openai.com/${request.url.slice(OPENAI.length)}`, request),
-		);
-	};
-}
+/** The most turns one `pending` call reads, within storage's limit on one `get`. */
+const PENDING_LIMIT = 100;
 
 /**
  * One per bot, running its turns through the pinned Pi runtime. Holds no credential: each turn
  * asks the account's Credentials object for the one its call needs, and drops it afterwards.
+ *
+ * A turn its connection interrupts stays stored as `unfinished`, with its pair and the reply so
+ * far, and messages sent meanwhile wait in `queue`. Once Credentials sees the connection answer
+ * again, `recover` resumes that turn on its own pair and then runs the queue in order.
  */
 export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 	#running: { id: string; controller: AbortController } | null = null;
+	/** Set while the bot resumes its unfinished turn and runs its queue. */
+	#draining = false;
+	/** A recovery that arrived while a live turn ran, started once it ends. */
+	#recoverAfter: string | null = null;
 
 	override fetch(): Response {
 		return Response.json({ object: "Bot" });
@@ -47,9 +52,13 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 	async send(
 		accountId: string,
 		message: string,
-	): Promise<{ stream: ReadableStream<Uint8Array> } | { refused: TurnRefusal }> {
+	): Promise<
+		{ stream: ReadableStream<Uint8Array> } | { queued: string } | { refused: TurnRefusal }
+	> {
+		// Storage reads hold other calls back, so a second send can't slip in before the claim.
+		if (this.#draining || (await this.#waiting())) return this.#enqueue(accountId, message);
 		if (this.#running) return { refused: "busy" };
-		// Claimed before the first await, so a second send can't start beside this one.
+		// Claimed before the first call out, so a second send can't start beside this one.
 		const running = { id: crypto.randomUUID(), controller: new AbortController() };
 		this.#running = running;
 		// The pair is resolved once, here: a change to it from now on reaches only the next turn.
@@ -57,7 +66,8 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		const grant = await this.#credentials(accountId).grant(accountId, override);
 		if ("refused" in grant) {
 			this.#running = null;
-			return { refused: grant.refused };
+			if (grant.refused === "no-model") return { refused: "no-model" };
+			return this.#enqueue(accountId, message);
 		}
 		const turn: Turn = {
 			id: running.id,
@@ -76,11 +86,40 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 			writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)).catch(() => {});
 		};
 		emit({ type: "start", turnId: turn.id, pair: turn.pair });
-		void this.#run(turn, grant, running.controller.signal, emit).finally(() => {
+		void this.#run(accountId, turn, grant, running.controller.signal, emit).finally(() => {
 			if (this.#running === running) this.#running = null;
 			writer.close().catch(() => {});
+			const recovering = this.#recoverAfter;
+			this.#recoverAfter = null;
+			if (recovering) void this.recover(recovering);
 		});
 		return { stream: readable };
+	}
+
+	async recover(accountId: string): Promise<void> {
+		if (this.#draining) return;
+		if (this.#running) {
+			this.#recoverAfter = accountId;
+			return;
+		}
+		this.#draining = true;
+		try {
+			await this.#drain(accountId);
+		} finally {
+			this.#draining = false;
+		}
+	}
+
+	async pending(ids: string[]): Promise<Pending> {
+		const names = ids.slice(0, PENDING_LIMIT).map((id) => `turn:${id}`);
+		const unfinished = (await this.ctx.storage.get<string>("unfinished")) ?? null;
+		if (unfinished && !names.includes(`turn:${unfinished}`)) names.push(`turn:${unfinished}`);
+		const turns = await this.ctx.storage.get<Turn>(names);
+		return {
+			turns: [...turns.values()],
+			unfinished,
+			queue: (await this.ctx.storage.get<Queued[]>("queue")) ?? [],
+		};
 	}
 
 	stop(): boolean {
@@ -113,6 +152,11 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		this.ctx.abort("evicted by the test stage");
 	}
 
+	/** This bot's ID: the name its object was reached by. */
+	get #botId(): string {
+		return this.ctx.id.name ?? this.ctx.id.toString();
+	}
+
 	/**
 	 * The account's Credentials object. Workers types keep only `fetch` on a stub whose shape
 	 * lacks their brand, so the RPC surface is restored here.
@@ -122,13 +166,114 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		return namespace.getByName(accountId);
 	}
 
-	async #run(turn: Turn, grant: Granted, signal: AbortSignal, emit: (event: TurnEvent) => void) {
-		let status: Exclude<TurnStatus, "running">;
+	/** Whether earlier work still waits: an unfinished turn, or anything queued. */
+	async #waiting(): Promise<boolean> {
+		const stored = await this.ctx.storage.get<unknown>(["unfinished", "queue"]);
+		const queue = stored.get("queue") as Queued[] | undefined;
+		return stored.has("unfinished") || Boolean(queue?.length);
+	}
+
+	/**
+	 * Queues `message` behind the waiting work, then tries to recover: that registers the bot
+	 * with Credentials if the connection is still in trouble, and runs the work if it isn't.
+	 */
+	async #enqueue(accountId: string, message: string): Promise<{ queued: string }> {
+		const queued: Queued = { id: crypto.randomUUID(), message, queuedAt: new Date().toISOString() };
+		const queue = (await this.ctx.storage.get<Queued[]>("queue")) ?? [];
+		await this.ctx.storage.put("queue", [...queue, queued]);
+		void this.recover(accountId);
+		return { queued: queued.id };
+	}
+
+	/**
+	 * Resumes the unfinished turn on its own pair, then starts each queued message as a turn on
+	 * the pair the bot uses now, in order. Stops at the first turn its connection interrupts.
+	 */
+	async #drain(accountId: string): Promise<void> {
+		const credentials = this.#credentials(accountId);
+		for (;;) {
+			const unfinishedId = await this.ctx.storage.get<string>("unfinished");
+			const unfinished = unfinishedId
+				? await this.ctx.storage.get<Turn>(`turn:${unfinishedId}`)
+				: undefined;
+			const next = unfinished ? undefined : (await this.ctx.storage.get<Queued[]>("queue"))?.[0];
+			if (!unfinished && !next) return;
+
+			// An unfinished turn keeps its pair; a queued message takes the pair the bot uses now.
+			const pair = unfinished?.pair ?? (await this.ctx.storage.get<Pair>("override")) ?? null;
+			const grant = await credentials.grant(accountId, pair);
+			if ("refused" in grant) {
+				// Still in trouble: Credentials wakes the bot again. Without a model, the work waits.
+				if (grant.refused === "interrupted") {
+					await credentials.interrupted(accountId, this.#botId, grant.pair);
+				}
+				return;
+			}
+			let turn: Turn;
+			if (unfinished) {
+				turn = { ...unfinished, status: "running" };
+				await this.ctx.storage.put(`turn:${turn.id}`, turn);
+			} else if (next) {
+				turn = {
+					id: next.id,
+					pair: grant.pair,
+					message: next.message,
+					reply: "",
+					status: "running",
+					startedAt: new Date().toISOString(),
+				};
+				// Read again: a message may have been queued while the grant was out.
+				const queue = (await this.ctx.storage.get<Queued[]>("queue")) ?? [];
+				await this.ctx.storage.put({
+					[`turn:${turn.id}`]: turn,
+					unfinished: turn.id,
+					queue: queue.filter((queued) => queued.id !== next.id),
+				});
+			} else return;
+
+			const running = { id: turn.id, controller: new AbortController() };
+			this.#running = running;
+			try {
+				const status = await this.#run(accountId, turn, grant, running.controller.signal, () => {});
+				if (status === "interrupted") return;
+			} finally {
+				if (this.#running === running) this.#running = null;
+			}
+		}
+	}
+
+	/**
+	 * Runs `turn` on its granted pair, continuing from the reply so far when it resumes. Saves
+	 * the reply as it streams, so an interruption or an eviction keeps it.
+	 */
+	async #run(
+		accountId: string,
+		turn: Turn,
+		grant: Granted,
+		signal: AbortSignal,
+		emit: (event: TurnEvent) => void,
+	): Promise<Ended> {
+		let status: Ended;
+		let fault: Fault | null = null;
+		// The provider's last answer, which says whether a failed call met a limit, an outage or
+		// a refused key.
+		const seen: { answer: Response | "unreachable" | null } = { answer: null };
+		const chatgpt = turn.pair.connectionId === "chatgpt";
+		const send = chatgpt ? openaiFetch(this.env.OAUTH_UPSTREAM) : fetch;
+		const observed = async (input: RequestInfo | URL, init?: RequestInit) => {
+			try {
+				const response = await send(input, init);
+				seen.answer = response;
+				return response;
+			} catch (error) {
+				if (!signal.aborted) seen.answer = "unreachable";
+				throw error;
+			}
+		};
 		try {
 			// A ChatGPT plan pair runs on Pi's `openai` provider against the plan-usage Responses
 			// endpoint, never the Codex backend. Its grant is the access token alone, which Pi sends
 			// as a bearer token exactly as it would an OAuth credential's.
-			const chatgpt = turn.pair.connectionId === "chatgpt";
 			const provider = chatgpt ? "openai" : "opencode";
 			const credentials = new InMemoryCredentialStore();
 			await credentials.modify(provider, async () => grant.credential);
@@ -145,32 +290,72 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 			const model = chatgpt
 				? catalogued
 				: { ...catalogued, baseUrl: this.env.OPENCODE_BASE_URL ?? catalogued.baseUrl };
+			const now = Date.now();
 			const events = models.stream(
 				model,
 				{
 					systemPrompt: INSTRUCTIONS,
-					messages: [{ role: "user", content: turn.message, timestamp: Date.now() }],
+					messages: [
+						{ role: "user", content: turn.message, timestamp: now },
+						// A resumed turn continues from what it already said.
+						...(turn.reply
+							? [
+									{
+										role: "assistant" as const,
+										content: [{ type: "text" as const, text: turn.reply }],
+										api: model.api,
+										provider: model.provider,
+										model: model.id,
+										usage: {
+											input: 0,
+											output: 0,
+											cacheRead: 0,
+											cacheWrite: 0,
+											totalTokens: 0,
+											cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+										},
+										stopReason: "stop" as const,
+										timestamp: now,
+									},
+								]
+							: []),
+					],
 				},
-				{ signal, fetch: chatgpt ? openaiUpstream(this.env.OAUTH_UPSTREAM) : undefined },
+				// One request per attempt: Credentials backs off with its probes, not Pi.
+				{ signal, fetch: observed, maxRetries: 0 },
 			);
 			for await (const event of events) {
 				if (event.type !== "text_delta") continue;
 				turn.reply += event.delta;
+				void this.ctx.storage.put(`turn:${turn.id}`, turn).catch(() => {});
 				emit({ type: "delta", text: event.delta });
 			}
 			const reply = await events.result();
+			const errored = reply.stopReason === "error" || reply.stopReason === "aborted";
+			if (errored && !signal.aborted) fault = faultOf(seen.answer, reply.errorMessage);
 			status = signal.aborted
 				? "stopped"
-				: reply.stopReason === "error" || reply.stopReason === "aborted"
-					? "failed"
-					: "completed";
+				: fault
+					? "interrupted"
+					: errored
+						? "failed"
+						: "completed";
 			if (status === "failed") console.error("A turn failed:", reply.errorMessage);
 		} catch (error) {
-			status = signal.aborted ? "stopped" : "failed";
+			if (!signal.aborted) fault = faultOf(seen.answer, String(error));
+			status = signal.aborted ? "stopped" : fault ? "interrupted" : "failed";
 			if (status === "failed") console.error("A turn failed:", error);
 		}
+		if (fault) turn.interruption = fault.state;
 		Object.assign(turn, { status, endedAt: new Date().toISOString() });
 		await this.ctx.storage.put(`turn:${turn.id}`, turn);
+		if (fault) {
+			await this.ctx.storage.put("unfinished", turn.id);
+			await this.#credentials(accountId).interrupted(accountId, this.#botId, turn.pair, fault);
+		} else {
+			await this.ctx.storage.delete("unfinished");
+		}
 		emit({ type: "end", status });
+		return status;
 	}
 }

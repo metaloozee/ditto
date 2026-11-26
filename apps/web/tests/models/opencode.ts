@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import { inject } from "vite-plus/test";
 
-import type { OpenCodeFault, OpenCodeReply, OpenCodeRequest } from "../auth/fake-upstream.ts";
+import type {
+	OpenCodeFault,
+	OpenCodeLimit,
+	OpenCodeReply,
+	OpenCodeRequest,
+} from "../auth/fake-upstream.ts";
 
 const control = (path: string, init?: RequestInit) =>
 	fetch(`${inject("upstreamUrl")}/__opencode/${path}`, init);
@@ -46,4 +51,47 @@ export async function openCodeTurnHungUp(key: string): Promise<boolean> {
 export async function openCodeRequests(key?: string): Promise<OpenCodeRequest[]> {
 	const all = (await (await control("requests")).json()) as OpenCodeRequest[];
 	return key === undefined ? all : all.filter((request) => request.key === key);
+}
+
+/**
+ * Limits `key`: from now on every Responses request naming it answers 429, with a
+ * `retry-after` of `retryAfter` seconds if given, until `liftOpenCodeLimit`.
+ */
+export async function limitOpenCode(key: string, limit: OpenCodeLimit = {}): Promise<void> {
+	const response = await control("limit", {
+		method: "POST",
+		body: JSON.stringify({ key, ...limit }),
+	});
+	if (!response.ok) throw new Error(`Limiting an OpenCode key failed: ${response.status}`);
+}
+
+export async function liftOpenCodeLimit(key: string): Promise<void> {
+	const response = await control("limit", { method: "DELETE", body: JSON.stringify({ key }) });
+	if (!response.ok) throw new Error(`Lifting an OpenCode limit failed: ${response.status}`);
+}
+
+/** What each Responses request naming `key` asked, in order: the last thing the user said. */
+export async function openCodeAsked(key: string): Promise<(string | null)[]> {
+	const all = (await (await control("asked")).json()) as {
+		key: string | null;
+		text: string | null;
+	}[];
+	return all.filter((asked) => asked.key === key).map((asked) => asked.text);
+}
+
+/** Takes OpenCode down for `key`: every request naming it answers 503 until `endOpenCodeOutage`. */
+export async function startOpenCodeOutage(key: string): Promise<void> {
+	const response = await control("down", { method: "POST", body: JSON.stringify({ key }) });
+	if (!response.ok) throw new Error(`Starting an OpenCode outage failed: ${response.status}`);
+}
+
+export async function endOpenCodeOutage(key: string): Promise<void> {
+	const response = await control("down", { method: "DELETE", body: JSON.stringify({ key }) });
+	if (!response.ok) throw new Error(`Ending an OpenCode outage failed: ${response.status}`);
+}
+
+/** Revokes `key`: from now on OpenCode answers every request naming it with 401. */
+export async function revokeOpenCodeKey(key: string): Promise<void> {
+	const response = await control("revoke", { method: "POST", body: JSON.stringify({ key }) });
+	if (!response.ok) throw new Error(`Revoking an OpenCode key failed: ${response.status}`);
 }

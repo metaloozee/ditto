@@ -1,8 +1,10 @@
 // The Bot object's RPC surface, kept free of Worker imports like `workspace-rpc.ts`.
 
+import type { Fault } from "./credentials-rpc.ts";
 import type { Pair } from "./lib/model-access.ts";
 
-export type TurnStatus = "running" | "completed" | "stopped" | "failed";
+/** `interrupted`: the connection failed mid-turn, and the turn waits to resume on its pair. */
+export type TurnStatus = "running" | "completed" | "stopped" | "failed" | "interrupted";
 
 /** A turn as the Bot records it: one message in, one reply out, on the pair it started with. */
 export interface Turn {
@@ -11,8 +13,24 @@ export interface Turn {
 	message: string;
 	reply: string;
 	status: TurnStatus;
+	/** Why an interrupted turn stopped. Kept once it resumes, so its card can settle. */
+	interruption?: Fault["state"];
 	startedAt: string;
 	endedAt?: string;
+}
+
+/** An owner's message waiting behind an interrupted turn. Its turn takes the same ID. */
+export interface Queued {
+	id: string;
+	message: string;
+	queuedAt: string;
+}
+
+/** The turns a page asked after, with what still waits: the unfinished turn and the queue. */
+export interface Pending {
+	turns: Turn[];
+	unfinished: string | null;
+	queue: Queued[];
 }
 
 /** One `data:` line of a turn's SSE stream. */
@@ -28,12 +46,22 @@ export interface BotRpc {
 	/**
 	 * Starts a turn on the bot's override, or else `accountId`'s default pair, and answers its
 	 * SSE stream of `TurnEvent`s.
-	 * Refuses before any upstream call when the account has no usable connection.
+	 * Refuses before any upstream call when the account has no usable connection. Queues the
+	 * message instead while a turn waits on its connection, or its connection is in trouble.
 	 */
 	send(
 		accountId: string,
 		message: string,
-	): Promise<{ stream: ReadableStream<Uint8Array> } | { refused: TurnRefusal }>;
+	): Promise<
+		{ stream: ReadableStream<Uint8Array> } | { queued: string } | { refused: TurnRefusal }
+	>;
+	/**
+	 * Resumes the unfinished turn on its own pair, then runs the queue in order. Credentials
+	 * calls it once the connection the bot waits on answers again.
+	 */
+	recover(accountId: string): Promise<void>;
+	/** The turns named by `ids`, the unfinished turn and the queue. */
+	pending(ids: string[]): Promise<Pending>;
 	/** Stops the running turn and aborts its upstream request. False when none runs. */
 	stop(): boolean;
 	/** The pair this bot uses in place of the account default, or null when it inherits it. */

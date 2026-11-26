@@ -15,6 +15,8 @@ import { toast } from "#/components/ui/toast.tsx";
 import { authClient, useSignOut } from "#/lib/auth-client.ts";
 import { resendAtFrom, sendLinkEmailCode } from "#/lib/email-code-client.ts";
 import {
+	accessOf,
+	checkConnection,
 	chooseDefaultPair,
 	connectOpenCodeKey,
 	disconnectModel,
@@ -115,7 +117,7 @@ function Settings() {
 			onSignOut={() => void signOut()}
 			modelAccess={
 				<ModelAccessSection
-					access={{ connections: modelAccess.connections }}
+					access={accessOf(modelAccess)}
 					chatgptOffered={false}
 					opencodeModels={OPENCODE_MODELS}
 					defaultPair={modelAccess.defaultPair ?? undefined}
@@ -148,9 +150,12 @@ function Settings() {
 						}
 						await router.invalidate();
 					}}
-					// Sign in with ChatGPT is a later ticket, and only Connected is shown so far.
+					onCheck={async (connectionId) => {
+						await checkConnection(connectionId);
+						await router.invalidate();
+					}}
+					// Sign in with ChatGPT is a later ticket; an OpenCode key reconnects in its own form.
 					onConnectChatGPT={noop}
-					onCheck={noop}
 					onReconnect={noop}
 				/>
 			}
