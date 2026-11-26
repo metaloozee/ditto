@@ -597,43 +597,65 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	 * expired token is rotated first, so a failed rotation is retried by these probes too.
 	 */
 	async #probeChatGPT(trouble: Trouble): Promise<"ok" | Fault | null> {
-		const token = await this.#chatgptToken(trouble.accountId);
-		if (!token) return null;
-		if ("fault" in token) return token.fault;
-		const response = await openaiFetch(this.env.OAUTH_UPSTREAM)(OPENAI_RESPONSES, {
-			method: "POST",
-			headers: { authorization: `Bearer ${token.access}`, "content-type": "application/json" },
-			body: JSON.stringify({
-				model: trouble.model,
-				input: [{ role: "user", content: "Reply with exactly one word: pong" }],
-				store: false,
-				stream: true,
-			}),
-		}).catch(() => "unreachable" as const);
-		if (response !== "unreachable") await response.body?.cancel();
-		return answered(response);
+		let refused: string | undefined;
+		for (;;) {
+			const token = await this.#chatgptToken(trouble.accountId, refused);
+			if (!token) return null;
+			if ("fault" in token) return token.fault;
+			const response = await openaiFetch(this.env.OAUTH_UPSTREAM)(OPENAI_RESPONSES, {
+				method: "POST",
+				headers: { authorization: `Bearer ${token.access}`, "content-type": "application/json" },
+				body: JSON.stringify({
+					model: trouble.model,
+					input: [{ role: "user", content: "Reply with exactly one word: pong" }],
+					store: false,
+					stream: true,
+				}),
+			}).catch(() => "unreachable" as const);
+			if (response !== "unreachable") await response.body?.cancel();
+			// A token refused before it expired gets one rotation, as a turn's does.
+			if (response === "unreachable" || response.status !== 401 || refused) {
+				return answered(response);
+			}
+			refused = token.access;
+		}
+	}
+
+	async replaceAccess(
+		accountId: string,
+		refused: string,
+	): Promise<{ key: string } | { fault: Fault } | null> {
+		if (!(await this.offersChatGPT())) return null;
+		const token = await this.#chatgptToken(accountId, refused);
+		return token && ("fault" in token ? token : { key: token.access });
 	}
 
 	/**
-	 * The ChatGPT access token, rotated first once it has expired. Callers meanwhile share the
-	 * one read or rotation in flight, and each starts by reading storage again, so no caller can
-	 * present a refresh token a rotation already spent. Null without a ChatGPT connection.
+	 * The ChatGPT access token, rotated first once it has expired or OpenAI `refused` it.
+	 * Callers meanwhile share the one read or rotation in flight, and each starts by reading
+	 * storage again, so no caller can present a refresh token a rotation already spent. Null
+	 * without a ChatGPT connection.
 	 */
-	#chatgptToken(accountId: string): Promise<Access | null> {
-		this.#chatgptAccess ??= this.#currentChatGPT(accountId).finally(() => {
+	async #chatgptToken(accountId: string, refused?: string): Promise<Access | null> {
+		this.#chatgptAccess ??= this.#currentChatGPT(accountId, refused).finally(() => {
 			this.#chatgptAccess = null;
 		});
-		return this.#chatgptAccess;
+		const token = await this.#chatgptAccess;
+		// Joined a read that answered the refused token itself: that one needs its rotation.
+		const stale = refused && token && "access" in token && token.access === refused;
+		return stale ? this.#chatgptToken(accountId, refused) : token;
 	}
 
-	async #currentChatGPT(accountId: string): Promise<Access | null> {
+	async #currentChatGPT(accountId: string, refused?: string): Promise<Access | null> {
 		const chatgpt = await this.ctx.storage.get<StoredChatGPT>("connection:chatgpt");
 		if (!chatgpt) return null;
 		const scope = `${accountId}:chatgpt`;
 		const signIn = JSON.parse(
 			await open(this.env.CREDENTIALS_ENCRYPTION_KEY, chatgpt.signIn, scope),
 		) as SignIn;
-		if (chatgpt.expires > Date.now()) return { access: signIn.access };
+		if (chatgpt.expires > Date.now() && signIn.access !== refused) {
+			return { access: signIn.access };
+		}
 
 		this.#rotating = true;
 		try {
@@ -654,7 +676,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 			const current = await this.ctx.storage.get<StoredChatGPT>("connection:chatgpt");
 			if (current?.signIn.iv !== chatgpt.signIn.iv) {
 				if (answer !== "unreachable") await answer.body?.cancel().catch(() => {});
-				return current ? this.#currentChatGPT(accountId) : null;
+				return current ? this.#currentChatGPT(accountId, refused) : null;
 			}
 			const next =
 				answer !== "unreachable" && answer.ok

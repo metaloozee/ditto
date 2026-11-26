@@ -87,6 +87,11 @@ export async function revokeRefreshToken(refresh: string): Promise<void> {
 	await control("revoke", { method: "POST", body: JSON.stringify({ refresh }) });
 }
 
+/** Makes simulated OpenAI refuse `access` before it expires, while its refresh token works. */
+export async function rejectAccessToken(access: string): Promise<void> {
+	await control("reject-access", { method: "POST", body: JSON.stringify({ access }) });
+}
+
 /** Every request simulated api.openai.com received that carried `token`, or every one at all. */
 export async function chatgptRequests(token?: string): Promise<ChatGPTRequest[]> {
 	const all = (await (await control("requests")).json()) as ChatGPTRequest[];

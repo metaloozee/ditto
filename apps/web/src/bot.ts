@@ -252,8 +252,11 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		return namespace.getByName(accountId);
 	}
 
-	/** Pi set up for the granted pair, holding only what the grant gave it. */
-	async #model(accountId: string, grant: Granted) {
+	/**
+	 * Pi set up for the granted pair, holding only what the grant gave it. `seen.fault` takes
+	 * the fault a call met outside the provider's answer.
+	 */
+	async #model(accountId: string, grant: Granted, seen: { fault: Fault | null }) {
 		const credentials = new InMemoryCredentialStore();
 		const models = createModels({
 			credentials,
@@ -287,7 +290,28 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		if (!catalogued) throw new Error(`Pi has no ${provider} model ${grant.pair.model}`);
 		// Pi drops the fields the plan-usage flow rejects only for api.openai.com itself, so that
 		// base URL stays as catalogued and the test stage reroutes through `fetch` instead.
-		if (chatgpt) return { models, model: catalogued, fetch: openaiFetch(this.env.OAUTH_UPSTREAM) };
+		if (chatgpt) {
+			const upstream = openaiFetch(this.env.OAUTH_UPSTREAM);
+			let key = grant.credential.key;
+			// A token OpenAI refuses before it expires gets one rotation and one more try.
+			const fetch: typeof globalThis.fetch = async (input, init) => {
+				const request = new Request(input, init);
+				const response = await upstream(request.clone());
+				if (response.status !== 401) return response;
+				const replaced = await this.#credentials(accountId).replaceAccess(accountId, key);
+				if (!replaced) return response;
+				if ("fault" in replaced) {
+					seen.fault = replaced.fault;
+					return response;
+				}
+				await response.body?.cancel();
+				key = replaced.key;
+				const headers = new Headers(request.headers);
+				headers.set("authorization", `Bearer ${key}`);
+				return upstream(new Request(request, { headers }));
+			};
+			return { models, model: catalogued, fetch };
+		}
 		const model = { ...catalogued, baseUrl: this.env.OPENCODE_BASE_URL ?? catalogued.baseUrl };
 		return { models, model, fetch: undefined };
 	}
@@ -402,7 +426,10 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		let fault: Fault | null = null;
 		// The provider's last answer, which says whether a failed call met a limit, an outage or
 		// a refused key.
-		const seen: { answer: Response | "unreachable" | null } = { answer: null };
+		const seen: { answer: Response | "unreachable" | null; fault: Fault | null } = {
+			answer: null,
+			fault: null,
+		};
 		// Where requests go: the network, or the account's Credentials object for the included model.
 		let send: typeof fetch = fetch;
 		const observed = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -416,7 +443,7 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 			}
 		};
 		try {
-			const route = await this.#model(accountId, grant);
+			const route = await this.#model(accountId, grant, seen);
 			const { models, model } = route;
 			send = route.fetch ?? fetch;
 			const now = Date.now();
@@ -471,7 +498,7 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 			const errored = reply.stopReason === "error" || reply.stopReason === "aborted";
 			// A connection's limit holds the turn for it; the included model has no connection to wait on.
 			if (errored && !signal.aborted && !("included" in grant)) {
-				fault = faultOf(seen.answer, reply.errorMessage);
+				fault = seen.fault ?? faultOf(seen.answer, reply.errorMessage);
 			}
 			status = signal.aborted
 				? "stopped"
@@ -482,7 +509,9 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 						: "completed";
 			if (status === "failed") console.error("A turn failed:", reply.errorMessage);
 		} catch (error) {
-			if (!signal.aborted && !("included" in grant)) fault = faultOf(seen.answer, String(error));
+			if (!signal.aborted && !("included" in grant)) {
+				fault = seen.fault ?? faultOf(seen.answer, String(error));
+			}
 			status = signal.aborted ? "stopped" : fault ? "interrupted" : "failed";
 			if (status === "failed") console.error("A turn failed:", error);
 		}

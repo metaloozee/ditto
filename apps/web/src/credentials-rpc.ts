@@ -75,6 +75,15 @@ export interface CredentialsRpc {
 	/** The credential for one call on `pair`, or on the default pair when it is null. */
 	grant(accountId: string, pair: Pair | null): Promise<Grant>;
 	/**
+	 * A ChatGPT access token for one more try after OpenAI `refused` one before it expired:
+	 * rotated once, unless a rotation already replaced it, or the fault the rotation met. Null
+	 * without a plan to use.
+	 */
+	replaceAccess(
+		accountId: string,
+		refused: string,
+	): Promise<{ key: string } | { fault: Fault } | null>;
+	/**
 	 * Sends one Workers AI chat completion `body` for `accountId` to the included model, through
 	 * AI Gateway with the account in its metadata. Refused with 403 when none is offered.
 	 */

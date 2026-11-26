@@ -422,6 +422,13 @@ export async function startFakeUpstream() {
 			if (index !== -1) chatgptTokens.splice(index, 1);
 			return json(204, null);
 		}
+		// OpenAI refusing an access token before it expires; its refresh token still works.
+		if (req.method === "POST" && url.pathname === "/__chatgpt/reject-access") {
+			const { access } = JSON.parse(await body(req)) as { access: string };
+			const issued = chatgptTokens.find((each) => each.access === access);
+			if (issued) issued.access = `rejected-${randomUUID()}`;
+			return json(204, null);
+		}
 		// Each good refresh rotates the pair: the old access and refresh tokens stop working.
 		if (req.method === "POST" && url.pathname === "/auth.openai.com/api/accounts/oauth/token") {
 			const form = new URLSearchParams(await body(req));

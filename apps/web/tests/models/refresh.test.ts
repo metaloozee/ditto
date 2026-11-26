@@ -11,6 +11,7 @@ import {
 	endRefreshTrouble,
 	markerOf,
 	planNextRefresh,
+	rejectAccessToken,
 	releaseRefresh,
 	revokeRefreshToken,
 	startRefreshTrouble,
@@ -295,5 +296,37 @@ describe("a rotation the owner overtook", () => {
 		// The newer import is what stays.
 		expect((await post(context, workspaceId, bots[0], "And again.")).status).toBe(200);
 		await expect(chatgptRequests(newer.access)).resolves.toHaveLength(2);
+	});
+});
+
+describe("an access token OpenAI refuses before it expires", () => {
+	it("is rotated once, and the turn carries on with the replacement", async () => {
+		const { context, workspaceId, bots } = await owner();
+		const credential = await chatgptCredential();
+		const imported = await context.request.post("/api/models/chatgpt", { data: { credential } });
+		expect(imported.status()).toBe(204);
+		await rejectAccessToken(credential.access);
+
+		const turn = await post(context, workspaceId, bots[0], "Draft the update.");
+		expect(turn.body).toContain('"status":"completed"');
+		const rotations = await chatgptRefreshes(credential.refresh);
+		expect(rotations).toHaveLength(1);
+		await expect(chatgptRequests(credential.access)).resolves.toHaveLength(1);
+		await expect(chatgptRequests(rotations[0]?.issued?.access ?? "none")).resolves.toHaveLength(1);
+		await expect(chatgptState(context)).resolves.toBe("Connected");
+	});
+
+	it("needs a reconnect once the rotation is refused too", async () => {
+		const { context, workspaceId, bots } = await owner();
+		const credential = await chatgptCredential();
+		const imported = await context.request.post("/api/models/chatgpt", { data: { credential } });
+		expect(imported.status()).toBe(204);
+		await rejectAccessToken(credential.access);
+		await revokeRefreshToken(credential.refresh);
+
+		const turn = await post(context, workspaceId, bots[0], "Draft the update.");
+		expect(turn.body).toContain('"status":"interrupted"');
+		await expect(chatgptState(context)).resolves.toBe("ReconnectNeeded");
+		await expect(rotationCount(credential.refresh)).resolves.toBe(1);
 	});
 });
