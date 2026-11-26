@@ -2,21 +2,43 @@ import { createModels, InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { DurableObject } from "cloudflare:workers";
 
-import type { BotRpc, Turn, TurnEvent, TurnRefusal, TurnStatus } from "./bot-rpc.ts";
-import type { CredentialsRpc, Grant } from "./credentials-rpc.ts";
+import type {
+	BotRpc,
+	Pending,
+	Queued,
+	Turn,
+	TurnEvent,
+	TurnRefusal,
+	TurnStatus,
+} from "./bot-rpc.ts";
+import type { CredentialsRpc, Fault, Grant } from "./credentials-rpc.ts";
 import type { Credentials } from "./credentials.ts";
 import type { AuthEnv } from "./lib/auth.ts";
+import type { Pair } from "./lib/model-access.ts";
+import { faultOf } from "./lib/provider-fault.ts";
 
 type Granted = Exclude<Grant, { refused: unknown }>;
+type Ended = Exclude<TurnStatus, "running">;
 
 const encoder = new TextEncoder();
+
+/** The most turns one `pending` call reads, within storage's limit on one `get`. */
+const PENDING_LIMIT = 100;
 
 /**
  * One per bot, running its turns through the pinned Pi runtime. Holds no credential: each turn
  * asks the account's Credentials object for the one its call needs, and drops it afterwards.
+ *
+ * A turn its connection interrupts stays stored as `unfinished`, with its pair and the reply so
+ * far, and messages sent meanwhile wait in `queue`. Once Credentials sees the connection answer
+ * again, `recover` resumes that turn on its own pair and then runs the queue in order.
  */
 export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 	#running: { id: string; controller: AbortController } | null = null;
+	/** Set while the bot resumes its unfinished turn and runs its queue. */
+	#draining = false;
+	/** A recovery that arrived while a live turn ran, started once it ends. */
+	#recoverAfter: string | null = null;
 
 	override fetch(): Response {
 		return Response.json({ object: "Bot" });
@@ -25,15 +47,22 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 	async send(
 		accountId: string,
 		message: string,
-	): Promise<{ stream: ReadableStream<Uint8Array> } | { refused: TurnRefusal }> {
+	): Promise<
+		{ stream: ReadableStream<Uint8Array> } | { queued: string } | { refused: TurnRefusal }
+	> {
+		// Storage reads hold other calls back, so a second send can't slip in before the claim.
+		if (this.#draining || (await this.#waiting())) return this.#enqueue(accountId, message);
 		if (this.#running) return { refused: "busy" };
-		// Claimed before the first await, so a second send can't start beside this one.
+		// Claimed before the first call out, so a second send can't start beside this one.
 		const running = { id: crypto.randomUUID(), controller: new AbortController() };
 		this.#running = running;
-		const grant = await this.#credentials(accountId).grant(accountId, null);
+		// The pair is resolved once, here: a change to it from now on reaches only the next turn.
+		const override = (await this.ctx.storage.get<Pair>("override")) ?? null;
+		const grant = await this.#credentials(accountId).grant(accountId, override);
 		if ("refused" in grant) {
 			this.#running = null;
-			return { refused: grant.refused };
+			if (grant.refused === "no-model") return { refused: "no-model" };
+			return this.#enqueue(accountId, message);
 		}
 		const turn: Turn = {
 			id: running.id,
@@ -55,8 +84,37 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		void this.#run(accountId, turn, grant, running.controller.signal, emit).finally(() => {
 			if (this.#running === running) this.#running = null;
 			writer.close().catch(() => {});
+			const recovering = this.#recoverAfter;
+			this.#recoverAfter = null;
+			if (recovering) void this.recover(recovering);
 		});
 		return { stream: readable };
+	}
+
+	async recover(accountId: string): Promise<void> {
+		if (this.#draining) return;
+		if (this.#running) {
+			this.#recoverAfter = accountId;
+			return;
+		}
+		this.#draining = true;
+		try {
+			await this.#drain(accountId);
+		} finally {
+			this.#draining = false;
+		}
+	}
+
+	async pending(ids: string[]): Promise<Pending> {
+		const names = ids.slice(0, PENDING_LIMIT).map((id) => `turn:${id}`);
+		const unfinished = (await this.ctx.storage.get<string>("unfinished")) ?? null;
+		if (unfinished && !names.includes(`turn:${unfinished}`)) names.push(`turn:${unfinished}`);
+		const turns = await this.ctx.storage.get<Turn>(names);
+		return {
+			turns: [...turns.values()],
+			unfinished,
+			queue: (await this.ctx.storage.get<Queued[]>("queue")) ?? [],
+		};
 	}
 
 	stop(): boolean {
@@ -65,36 +123,33 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		return true;
 	}
 
-	async turn(turnId: string): Promise<Turn | null> {
-		return (await this.ctx.storage.get<Turn>(`turn:${turnId}`)) ?? null;
+	async override(): Promise<Pair | null> {
+		return (await this.ctx.storage.get<Pair>("override")) ?? null;
 	}
 
-	async resume(accountId: string): Promise<void> {
-		if (this.#running) return;
-		const turns = await this.ctx.storage.list<Turn>({ prefix: "turn:" });
-		const turn = [...turns.values()].find((each) => each.status === "interrupted");
-		if (!turn) return;
-		const running = { id: turn.id, controller: new AbortController() };
-		this.#running = running;
-		// The pair it started with, never the default: a failure doesn't move a turn.
-		const grant = await this.#credentials(accountId).grant(accountId, turn.pair);
-		if ("refused" in grant) {
-			this.#running = null;
-			return;
+	async chooseOverride(accountId: string, pair: Pair | null): Promise<boolean> {
+		if (pair === null) {
+			await this.ctx.storage.delete("override");
+			return true;
 		}
-		delete turn.interruption;
-		Object.assign(turn, { status: "running", reply: "" });
-		await this.ctx.storage.put(`turn:${turn.id}`, turn);
-		// Nobody reads a resumed turn's stream: the owner sees it through its record.
-		this.ctx.waitUntil(
-			this.#run(accountId, turn, grant, running.controller.signal, () => {}).finally(() => {
-				if (this.#running === running) this.#running = null;
-			}),
-		);
+		const { connections } = await this.#credentials(accountId).view();
+		const connection = connections.find((each) => each.id === pair.connectionId);
+		if (!connection?.models.includes(pair.model)) return false;
+		await this.ctx.storage.put("override", { connectionId: pair.connectionId, model: pair.model });
+		return true;
 	}
 
 	async stored(): Promise<Record<string, unknown>> {
 		return Object.fromEntries(await this.ctx.storage.list());
+	}
+
+	evict(): void {
+		this.ctx.abort("evicted by the test stage");
+	}
+
+	/** This bot's ID: the name its object was reached by. */
+	get #botId(): string {
+		return this.ctx.id.name ?? this.ctx.id.toString();
 	}
 
 	/**
@@ -106,23 +161,105 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		return namespace.getByName(accountId);
 	}
 
+	/** Whether earlier work still waits: an unfinished turn, or anything queued. */
+	async #waiting(): Promise<boolean> {
+		const stored = await this.ctx.storage.get<unknown>(["unfinished", "queue"]);
+		const queue = stored.get("queue") as Queued[] | undefined;
+		return stored.has("unfinished") || Boolean(queue?.length);
+	}
+
+	/**
+	 * Queues `message` behind the waiting work, then tries to recover: that registers the bot
+	 * with Credentials if the connection is still in trouble, and runs the work if it isn't.
+	 */
+	async #enqueue(accountId: string, message: string): Promise<{ queued: string }> {
+		const queued: Queued = { id: crypto.randomUUID(), message, queuedAt: new Date().toISOString() };
+		const queue = (await this.ctx.storage.get<Queued[]>("queue")) ?? [];
+		await this.ctx.storage.put("queue", [...queue, queued]);
+		void this.recover(accountId);
+		return { queued: queued.id };
+	}
+
+	/**
+	 * Resumes the unfinished turn on its own pair, then starts each queued message as a turn on
+	 * the pair the bot uses now, in order. Stops at the first turn its connection interrupts.
+	 */
+	async #drain(accountId: string): Promise<void> {
+		const credentials = this.#credentials(accountId);
+		for (;;) {
+			const unfinishedId = await this.ctx.storage.get<string>("unfinished");
+			const unfinished = unfinishedId
+				? await this.ctx.storage.get<Turn>(`turn:${unfinishedId}`)
+				: undefined;
+			const next = unfinished ? undefined : (await this.ctx.storage.get<Queued[]>("queue"))?.[0];
+			if (!unfinished && !next) return;
+
+			// An unfinished turn keeps its pair; a queued message takes the pair the bot uses now.
+			const pair = unfinished?.pair ?? (await this.ctx.storage.get<Pair>("override")) ?? null;
+			const grant = await credentials.grant(accountId, pair);
+			if ("refused" in grant) {
+				// Still in trouble: Credentials wakes the bot again. Without a model, the work waits.
+				if (grant.refused === "interrupted") {
+					await credentials.interrupted(accountId, this.#botId, grant.pair);
+				}
+				return;
+			}
+			let turn: Turn;
+			if (unfinished) {
+				turn = { ...unfinished, status: "running" };
+				await this.ctx.storage.put(`turn:${turn.id}`, turn);
+			} else if (next) {
+				turn = {
+					id: next.id,
+					pair: grant.pair,
+					message: next.message,
+					reply: "",
+					status: "running",
+					startedAt: new Date().toISOString(),
+				};
+				// Read again: a message may have been queued while the grant was out.
+				const queue = (await this.ctx.storage.get<Queued[]>("queue")) ?? [];
+				await this.ctx.storage.put({
+					[`turn:${turn.id}`]: turn,
+					unfinished: turn.id,
+					queue: queue.filter((queued) => queued.id !== next.id),
+				});
+			} else return;
+
+			const running = { id: turn.id, controller: new AbortController() };
+			this.#running = running;
+			try {
+				const status = await this.#run(accountId, turn, grant, running.controller.signal, () => {});
+				if (status === "interrupted") return;
+			} finally {
+				if (this.#running === running) this.#running = null;
+			}
+		}
+	}
+
+	/**
+	 * Runs `turn` on its granted pair, continuing from the reply so far when it resumes. Saves
+	 * the reply as it streams, so an interruption or an eviction keeps it.
+	 */
 	async #run(
 		accountId: string,
 		turn: Turn,
 		grant: Granted,
 		signal: AbortSignal,
 		emit: (event: TurnEvent) => void,
-	) {
-		let status: Exclude<TurnStatus, "running">;
-		// What the provider last answered, so a failure can say whether to wait or reconnect.
-		let answered: number | "unreachable" | undefined;
-		const observed: typeof fetch = async (input, init) => {
+	): Promise<Ended> {
+		let status: Ended;
+		let fault: Fault | null = null;
+		// The provider's last answer, which says whether a failed call met a limit, an outage or
+		// a refused key.
+		const seen: { answer: Response | "unreachable" | null } = { answer: null };
+		const observed = async (input: RequestInfo | URL, init?: RequestInit) => {
 			try {
 				const response = await fetch(input, init);
-				answered = response.status;
+				seen.answer = response;
 				return response;
 			} catch (error) {
-				if (!signal.aborted) answered = "unreachable";
+				if (!signal.aborted) seen.answer = "unreachable";
 				throw error;
 			}
 		};
@@ -138,54 +275,71 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 			const catalogued = models.getModel("opencode", turn.pair.model);
 			if (!catalogued) throw new Error(`Pi has no OpenCode model ${turn.pair.model}`);
 			const model = { ...catalogued, baseUrl: this.env.OPENCODE_BASE_URL ?? catalogued.baseUrl };
+			const now = Date.now();
 			const events = models.stream(
 				model,
-				{ messages: [{ role: "user", content: turn.message, timestamp: Date.now() }] },
-				// One request per attempt: the Credentials object backs off, not Pi.
+				{
+					messages: [
+						{ role: "user", content: turn.message, timestamp: now },
+						// A resumed turn continues from what it already said.
+						...(turn.reply
+							? [
+									{
+										role: "assistant" as const,
+										content: [{ type: "text" as const, text: turn.reply }],
+										api: model.api,
+										provider: model.provider,
+										model: model.id,
+										usage: {
+											input: 0,
+											output: 0,
+											cacheRead: 0,
+											cacheWrite: 0,
+											totalTokens: 0,
+											cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+										},
+										stopReason: "stop" as const,
+										timestamp: now,
+									},
+								]
+							: []),
+					],
+				},
+				// One request per attempt: Credentials backs off with its probes, not Pi.
 				{ signal, fetch: observed, maxRetries: 0 },
 			);
 			for await (const event of events) {
 				if (event.type !== "text_delta") continue;
 				turn.reply += event.delta;
+				void this.ctx.storage.put(`turn:${turn.id}`, turn).catch(() => {});
 				emit({ type: "delta", text: event.delta });
 			}
 			const reply = await events.result();
+			const errored = reply.stopReason === "error" || reply.stopReason === "aborted";
+			if (errored && !signal.aborted) fault = faultOf(seen.answer, reply.errorMessage);
 			status = signal.aborted
 				? "stopped"
-				: reply.stopReason === "error" || reply.stopReason === "aborted"
-					? "failed"
-					: "completed";
+				: fault
+					? "interrupted"
+					: errored
+						? "failed"
+						: "completed";
 			if (status === "failed") console.error("A turn failed:", reply.errorMessage);
 		} catch (error) {
-			status = signal.aborted ? "stopped" : "failed";
+			if (!signal.aborted) fault = faultOf(seen.answer, String(error));
+			status = signal.aborted ? "stopped" : fault ? "interrupted" : "failed";
 			if (status === "failed") console.error("A turn failed:", error);
 		}
-		const interruption = status === "failed" ? interruptionOf(answered) : undefined;
-		if (interruption) {
-			Object.assign(turn, { status: "interrupted", interruption });
-			await this.ctx.storage.put(`turn:${turn.id}`, turn);
-			await this.#credentials(accountId).interrupted(
-				accountId,
-				turn.pair,
-				this.ctx.id.toString(),
-				interruption,
-			);
-			emit({ type: "end", status: "interrupted", interruption });
-			return;
-		}
+		if (fault) turn.interruption = fault.state;
 		Object.assign(turn, { status, endedAt: new Date().toISOString() });
 		await this.ctx.storage.put(`turn:${turn.id}`, turn);
+		if (fault) {
+			await this.ctx.storage.put("unfinished", turn.id);
+			await this.#credentials(accountId).interrupted(accountId, this.#botId, turn.pair, fault);
+		} else {
+			await this.ctx.storage.delete("unfinished");
+		}
 		emit({ type: "end", status });
+		return status;
 	}
-}
-
-/** A refused credential needs the owner; an outage passes. Other failures just end the turn. */
-function interruptionOf(
-	answered: number | "unreachable" | undefined,
-): "Unavailable" | "ReconnectNeeded" | undefined {
-	if (answered === 401 || answered === 403) return "ReconnectNeeded";
-	if (answered === "unreachable" || (typeof answered === "number" && answered >= 500)) {
-		return "Unavailable";
-	}
-	return undefined;
 }

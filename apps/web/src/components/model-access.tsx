@@ -1126,9 +1126,9 @@ export function InterruptionCard({
 	onCheck?: () => Promise<void> | void;
 }) {
 	const narrow = useIsMobile();
-	const [resumedOn, setResumedOn] = useState<Pair>();
-	// Settled by a Resume here, or by the turn carrying on by itself once its connection recovered.
-	const settled = resumedOn ?? (interruption === "Settled" ? (settledPair ?? turnPair) : undefined);
+	// Settled by the owner's Resume here, or by the turn carrying on, which can happen later.
+	const [resumed, setResumed] = useState<Pair>();
+	const settled = resumed ?? (interruption === "Settled" ? (settledPair ?? turnPair) : undefined);
 	const [checking, setChecking] = useState(false);
 	const connection = access.connections.find((each) => each.id === turnPair.connectionId);
 	const current: Interruption = settled ? "Settled" : interruption;
@@ -1174,7 +1174,7 @@ export function InterruptionCard({
 															title={`Resume on ${pairLabel(access, action.pair)}`}
 															className="max-w-full shrink"
 															onClick={() => {
-																setResumedOn(action.pair);
+																setResumed(action.pair);
 																onResume?.(action.pair);
 															}}
 														>

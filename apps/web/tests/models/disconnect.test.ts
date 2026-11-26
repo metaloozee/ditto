@@ -121,6 +121,23 @@ describe("after a disconnect", () => {
 		await expect(openCodeRequests(key)).resolves.toEqual(before);
 	});
 
+	it("refuses a bot's override on that connection rather than moving it", async () => {
+		const { context, workspaceId, botId } = await owner();
+		const key = await connectKey(context);
+		const pinned = await context.request.put(`/api/workspaces/${workspaceId}/bots/${botId}/model`, {
+			data: { override: { connectionId: "opencode", model: "gpt-5.5" } },
+		});
+		expect(pinned.status()).toBe(204);
+		const before = await openCodeRequests();
+
+		expect((await disconnect(context)).status()).toBe(204);
+		const refused = await turn(context, workspaceId, botId, "Still on my model?");
+		expect(refused.status).toBe(409);
+		expect(JSON.parse(refused.body)).toEqual({ error: "Connect a model in Settings first" });
+		await expect(openCodeRequests()).resolves.toEqual(before);
+		await expect(openCodeRequests(key)).resolves.toHaveLength(1);
+	});
+
 	it("keeps the owner signed in, with the same sign-in methods, through sign-out and back", async () => {
 		const { page, context, user } = await owner();
 		const before = await methods(context);

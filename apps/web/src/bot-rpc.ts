@@ -1,11 +1,10 @@
 // The Bot object's RPC surface, kept free of Worker imports like `workspace-rpc.ts`.
 
-import type { Interruption, Pair } from "./lib/model-access.ts";
+import type { Fault } from "./credentials-rpc.ts";
+import type { Pair } from "./lib/model-access.ts";
 
+/** `interrupted`: the connection failed mid-turn, and the turn waits to resume on its pair. */
 export type TurnStatus = "running" | "completed" | "stopped" | "failed" | "interrupted";
-
-/** Why a turn waits on its connection instead of ending. */
-export type TurnInterruption = Exclude<Interruption, "Settled">;
 
 /** A turn as the Bot records it: one message in, one reply out, on the pair it started with. */
 export interface Turn {
@@ -14,39 +13,66 @@ export interface Turn {
 	message: string;
 	reply: string;
 	status: TurnStatus;
-	/** Set while the turn is interrupted, until its connection recovers and it resumes. */
-	interruption?: TurnInterruption;
+	/** Why an interrupted turn stopped. Kept once it resumes, so its card can settle. */
+	interruption?: Fault["state"];
 	startedAt: string;
 	endedAt?: string;
+}
+
+/** An owner's message waiting behind an interrupted turn. Its turn takes the same ID. */
+export interface Queued {
+	id: string;
+	message: string;
+	queuedAt: string;
+}
+
+/** The turns a page asked after, with what still waits: the unfinished turn and the queue. */
+export interface Pending {
+	turns: Turn[];
+	unfinished: string | null;
+	queue: Queued[];
 }
 
 /** One `data:` line of a turn's SSE stream. */
 export type TurnEvent =
 	| { type: "start"; turnId: string; pair: Pair }
 	| { type: "delta"; text: string }
-	| { type: "end"; status: Exclude<TurnStatus, "running">; interruption?: TurnInterruption };
+	| { type: "end"; status: Exclude<TurnStatus, "running"> };
 
 /** Why a turn didn't start: no usable model for the account, or a turn already running. */
 export type TurnRefusal = "no-model" | "busy";
 
 export interface BotRpc {
 	/**
-	 * Starts a turn on `accountId`'s default pair and answers its SSE stream of `TurnEvent`s.
-	 * Refuses before any upstream call when the account has no usable connection.
+	 * Starts a turn on the bot's override, or else `accountId`'s default pair, and answers its
+	 * SSE stream of `TurnEvent`s.
+	 * Refuses before any upstream call when the account has no usable connection. Queues the
+	 * message instead while a turn waits on its connection, or its connection is in trouble.
 	 */
 	send(
 		accountId: string,
 		message: string,
-	): Promise<{ stream: ReadableStream<Uint8Array> } | { refused: TurnRefusal }>;
+	): Promise<
+		{ stream: ReadableStream<Uint8Array> } | { queued: string } | { refused: TurnRefusal }
+	>;
+	/**
+	 * Resumes the unfinished turn on its own pair, then runs the queue in order. Credentials
+	 * calls it once the connection the bot waits on answers again.
+	 */
+	recover(accountId: string): Promise<void>;
+	/** The turns named by `ids`, the unfinished turn and the queue. */
+	pending(ids: string[]): Promise<Pending>;
 	/** Stops the running turn and aborts its upstream request. False when none runs. */
 	stop(): boolean;
-	/** The turn as recorded, or null when this bot has none by that ID. */
-	turn(turnId: string): Promise<Turn | null>;
+	/** The pair this bot uses in place of the account default, or null when it inherits it. */
+	override(): Promise<Pair | null>;
 	/**
-	 * Carries on the interrupted turn on the pair it started with, once its connection
-	 * answers again. Called by the account's Credentials object; does nothing without one.
+	 * Sets the bot's own pair from its next turn on, or null to inherit the default. False when
+	 * the pair names no connection of `accountId`, or a model it doesn't offer.
 	 */
-	resume(accountId: string): Promise<void>;
+	chooseOverride(accountId: string, pair: Pair | null): Promise<boolean>;
 	/** Test stage only: everything the object stores, exactly as stored. */
 	stored(): Promise<Record<string, unknown>>;
+	/** Test stage only: drops the live instance, as an eviction would. */
+	evict(): void;
 }

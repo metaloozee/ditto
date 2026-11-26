@@ -2,7 +2,13 @@ import type { BrowserContext, Page } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
 import { continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
-import { failNextOpenCodeRequest, openCodeKey, openCodeRequests } from "./opencode.ts";
+import {
+	endOpenCodeOutage,
+	openCodeKey,
+	openCodeRequests,
+	revokeOpenCodeKey,
+	startOpenCodeOutage,
+} from "./opencode.ts";
 
 const PHONE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
 
@@ -29,10 +35,14 @@ async function connectKey(context: BrowserContext, model = "gpt-5.4-mini") {
 const botPath = (workspaceId: string, botId: string) =>
 	`/api/workspaces/${workspaceId}/bots/${botId}`;
 
+/** The bot's turn records, as stored. */
 async function turns(context: BrowserContext, workspaceId: string, botId: string) {
 	const response = await context.request.get(`${botPath(workspaceId, botId)}/__test/stored`);
 	expect(response.status()).toBe(200);
-	return Object.values((await response.json()) as Record<string, unknown>);
+	const stored = (await response.json()) as Record<string, unknown>;
+	return Object.entries(stored).flatMap(([name, value]) =>
+		name.startsWith("turn:") ? [value] : [],
+	);
 }
 
 async function connectionState(context: BrowserContext) {
@@ -41,9 +51,12 @@ async function connectionState(context: BrowserContext) {
 	return connections[0]?.state;
 }
 
+const requestCount = (key: string) => openCodeRequests(key).then((all) => all.length);
+
 const composer = (page: Page) => page.getByRole("textbox", { name: "Message Ditto" });
 const messages = (page: Page) => page.getByLabel("Messages", { exact: true });
 const modelAccess = (page: Page) => page.getByRole("region", { name: "Model access" });
+const card = (page: Page) => messages(page).getByRole("group", { name: "gpt-5.4-mini · OpenCode" });
 
 async function send(page: Page, text: string) {
 	await composer(page).fill(text);
@@ -51,19 +64,19 @@ async function send(page: Page, text: string) {
 }
 
 const PAIR = { connectionId: "opencode", model: "gpt-5.4-mini" };
+const ON_PAIR = { key: expect.any(String), model: "gpt-5.4-mini" };
 
 describe("a provider outage", () => {
-	it("shows Unavailable, keeps checking, and resumes the turn on its original pair", async () => {
+	it("shows Unavailable, keeps checking with backoff, and resumes the turn on its original pair", async () => {
 		const { page, context, workspaceId, botId } = await owner();
 		const key = await connectKey(context);
-		await failNextOpenCodeRequest({ status: 503 });
+		await startOpenCodeOutage(key);
 
 		await open(page, "/");
 		await send(page, "Draft the weekly update.");
-		const card = messages(page).getByRole("group", { name: "gpt-5.4-mini · OpenCode" });
-		await card.getByText("Unavailable", { exact: true }).waitFor();
-		await card.getByText("OpenCode isn’t responding. Ditto keeps checking.").waitFor();
-		await card.getByRole("button", { name: "Check again" }).waitFor();
+		await card(page).getByText("Unavailable", { exact: true }).waitFor();
+		await card(page).getByText("OpenCode isn’t responding. Ditto keeps checking.").waitFor();
+		await card(page).getByRole("button", { name: "Check again" }).waitFor();
 		expect(await turns(context, workspaceId, botId)).toEqual([
 			expect.objectContaining({ pair: PAIR, status: "interrupted", interruption: "Unavailable" }),
 		]);
@@ -73,41 +86,47 @@ describe("a provider outage", () => {
 		await modelAccess(settings).getByText("Unavailable", { exact: true }).waitFor();
 		await settings.close();
 
-		// The upstream answers again; Ditto's own probe finds it and the turn carries on.
-		await messages(page).getByText("pong").waitFor({ timeout: 25_000 });
+		// Probes back off: over six seconds of outage, at most one a second, doubling.
+		await new Promise((resolve) => setTimeout(resolve, 6000));
+		const duringOutage = await requestCount(key);
+		expect(duringOutage).toBeGreaterThanOrEqual(3);
+		expect(duringOutage).toBeLessThanOrEqual(6);
+
+		await endOpenCodeOutage(key);
+		await messages(page).getByText("pong").waitFor({ timeout: 20_000 });
 		await messages(page).getByText("Carried on with gpt-5.4-mini · OpenCode").waitFor();
 		expect(await turns(context, workspaceId, botId)).toEqual([
 			expect.objectContaining({ pair: PAIR, status: "completed", reply: "pong" }),
 		]);
 		await expect(connectionState(context)).resolves.toBe("Connected");
-		// Connect check, the failed turn, one probe, the resumed turn: all on the original pair.
-		await expect(openCodeRequests(key)).resolves.toEqual(
-			Array.from({ length: 4 }, () => ({ key, model: "gpt-5.4-mini" })),
-		);
+		// Every request, probes and the resumed turn included, stayed on the turn's own pair.
+		const all = await openCodeRequests(key);
+		expect(all).toEqual(all.map(() => ON_PAIR));
 	}, 60_000);
 
 	it("probes once on Check again and updates the state", async () => {
-		const { page, context } = await owner(PHONE);
+		const { page, context, workspaceId, botId } = await owner(PHONE);
 		const key = await connectKey(context);
-		await failNextOpenCodeRequest({ status: 503 });
-		await failNextOpenCodeRequest({ status: 502 });
+		await startOpenCodeOutage(key);
 
 		await open(page, "/");
 		await send(page, "Draft the weekly update.");
-		const card = messages(page).getByRole("group", { name: "gpt-5.4-mini · OpenCode" });
-		await card.getByText("Unavailable", { exact: true }).waitFor();
-		await expect(openCodeRequests(key)).resolves.toHaveLength(2);
+		await card(page).getByText("Unavailable", { exact: true }).waitFor();
 
+		const before = await requestCount(key);
+		const checked = await context.request.post("/api/models/opencode/check");
+		expect(await checked.json()).toEqual({ state: "Unavailable" });
+		expect(await requestCount(key)).toBe(before + 1);
+
+		await endOpenCodeOutage(key);
 		await open(page, "/settings");
 		const section = modelAccess(page);
-		await section.getByRole("button", { name: "Check again OpenCode" }).click();
-		await expect.poll(() => openCodeRequests(key).then((all) => all.length)).toBe(3);
 		await section.getByText("Unavailable", { exact: true }).waitFor();
-
 		await section.getByRole("button", { name: "Check again OpenCode" }).click();
 		await section.getByText("Connected", { exact: true }).waitFor();
-		// The successful probe, then the turn it resumed.
-		await expect.poll(() => openCodeRequests(key).then((all) => all.length)).toBe(5);
+		await expect
+			.poll(() => turns(context, workspaceId, botId), { timeout: 15_000 })
+			.toEqual([expect.objectContaining({ pair: PAIR, status: "completed", reply: "pong" })]);
 	}, 60_000);
 });
 
@@ -115,21 +134,25 @@ describe("a revoked key", () => {
 	it("shows Reconnect needed, stops using the key, and continues the turn after a reconnect", async () => {
 		const { page, context, workspaceId, botId } = await owner(PHONE);
 		const revoked = await connectKey(context);
-		await failNextOpenCodeRequest({ status: 401, body: { error: { message: "Key revoked" } } });
+		await revokeOpenCodeKey(revoked);
 
 		await open(page, "/");
 		await send(page, "Draft the weekly update.");
-		const card = messages(page).getByRole("group", { name: "gpt-5.4-mini · OpenCode" });
-		await card.getByText("Reconnect needed", { exact: true }).waitFor();
-		await card.getByText("OpenCode no longer accepts this key.").waitFor();
-		await card.getByRole("link", { name: "Reconnect" }).waitFor();
+		await card(page).getByText("Reconnect needed", { exact: true }).waitFor();
+		await card(page).getByText("OpenCode no longer accepts this key.").waitFor();
 
-		const refused = await context.request.post(`${botPath(workspaceId, botId)}/turns`, {
-			data: { message: "Anyone there?" },
+		// A message sent meanwhile waits; nothing probes or sends the refused key.
+		const queued = await context.request.post(`${botPath(workspaceId, botId)}/turns`, {
+			data: { message: "Also add the hiring numbers." },
 		});
-		expect(refused.status()).toBe(409);
+		expect(queued.status()).toBe(202);
+		await new Promise((resolve) => setTimeout(resolve, 4000));
+		const checked = await context.request.post("/api/models/opencode/check");
+		expect(await checked.json()).toEqual({ state: "ReconnectNeeded" });
+		// The connect check and the turn it refused.
+		await expect(requestCount(revoked)).resolves.toBe(2);
 
-		await card.getByRole("link", { name: "Reconnect" }).click();
+		await card(page).getByRole("link", { name: "Reconnect" }).click();
 		await page.waitForURL("**/settings");
 		const section = modelAccess(page);
 		await section.getByText("Reconnect needed", { exact: true }).waitFor();
@@ -141,12 +164,20 @@ describe("a revoked key", () => {
 
 		await expect
 			.poll(() => turns(context, workspaceId, botId), { timeout: 15_000 })
-			.toEqual([expect.objectContaining({ pair: PAIR, status: "completed", reply: "pong" })]);
-		// Only the connect check and the turn it refused ever carried the revoked key.
-		await expect(openCodeRequests(revoked)).resolves.toHaveLength(2);
-		await expect(openCodeRequests(fresh)).resolves.toEqual([
-			{ key: fresh, model: "gpt-5.4-mini" },
-			{ key: fresh, model: "gpt-5.4-mini" },
-		]);
+			.toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						pair: PAIR,
+						message: "Draft the weekly update.",
+						status: "completed",
+					}),
+					expect.objectContaining({ message: "Also add the hiring numbers.", status: "completed" }),
+				]),
+			);
+		await expect(requestCount(revoked)).resolves.toBe(2);
+		// The connect check, the resumed turn and the queued one, all with the new key.
+		await expect(openCodeRequests(fresh)).resolves.toEqual(
+			Array.from({ length: 3 }, () => ({ key: fresh, model: "gpt-5.4-mini" })),
+		);
 	}, 60_000);
 });
