@@ -105,17 +105,18 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		{ stream: ReadableStream<Uint8Array> } | { queued: string } | { refused: TurnRefusal }
 	> {
 		// Storage reads hold other calls back, so a second send can't slip in before the claim.
-		if (this.#draining || (await this.#waiting())) return this.#enqueue(accountId, message);
-		if (this.#running) return { refused: "busy" };
+		const waiting = this.#draining || (await this.#waiting());
+		if (!waiting && this.#running) return { refused: "busy" };
 		// Claimed before the first call out, so a second send can't start beside this one.
-		const running = { id: crypto.randomUUID(), controller: new AbortController() };
-		this.#running = running;
+		const running = waiting ? null : { id: crypto.randomUUID(), controller: new AbortController() };
+		if (running) this.#running = running;
 		// The pair is resolved once, here: a change to it from now on reaches only the next turn.
 		const override = (await this.ctx.storage.get<Pair>("override")) ?? null;
 		const grant = await this.#grant(accountId, override);
-		if ("refused" in grant) {
-			this.#running = null;
-			if (grant.refused === "no-model") return { refused: "no-model" };
+		if (!running || "refused" in grant) {
+			if (running) this.#running = null;
+			// No model could ever run it, so it is refused even behind waiting work.
+			if ("refused" in grant && grant.refused === "no-model") return { refused: "no-model" };
 			return this.#enqueue(accountId, message);
 		}
 		const turn: Turn = {
@@ -340,10 +341,17 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 			const pair = unfinished?.pair ?? (await this.ctx.storage.get<Pair>("override")) ?? null;
 			const grant = await this.#grant(accountId, pair);
 			if ("refused" in grant) {
-				// Still in trouble: Credentials wakes the bot again. Without a model, the work waits.
+				// Still in trouble: Credentials wakes the bot again.
 				if (grant.refused === "interrupted") {
 					await credentials.interrupted(accountId, this.#botId, grant.pair);
+					return;
 				}
+				// Its connection is gone: the turn stays interrupted and no longer holds the queue.
+				if (unfinished) {
+					await this.ctx.storage.delete("unfinished");
+					continue;
+				}
+				// Without a model, the queue waits.
 				return;
 			}
 			let turn: Turn;

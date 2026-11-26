@@ -2,7 +2,7 @@ import type { BrowserContext, Page } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
 import { clickSignOut, continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
-import { openCodeKey, openCodeRequests } from "./opencode.ts";
+import { limitOpenCode, openCodeKey, openCodeRequests } from "./opencode.ts";
 
 const modelAccess = (page: Page) => page.getByRole("region", { name: "Model access" });
 
@@ -118,6 +118,32 @@ describe("after a disconnect", () => {
 		const refused = await turn(context, workspaceId, botId, "After");
 		expect(refused.status).toBe(409);
 		expect(JSON.parse(refused.body)).toEqual({ error: "Connect a model in Settings first" });
+		await expect(openCodeRequests(key)).resolves.toEqual(before);
+	});
+
+	it("refuses a turn behind one the connection interrupted, which stays interrupted", async () => {
+		const { context, workspaceId, botId } = await owner();
+		const key = await connectKey(context);
+		await limitOpenCode(key);
+		const interrupted = await turn(context, workspaceId, botId, "Draft the brief.");
+		expect(interrupted.body).toContain('"status":"interrupted"');
+		expect((await turn(context, workspaceId, botId, "Then the summary.")).status).toBe(202);
+
+		expect((await disconnect(context)).status()).toBe(204);
+		const before = await openCodeRequests(key);
+		const refused = await turn(context, workspaceId, botId, "After");
+		expect(refused.status).toBe(409);
+		expect(JSON.parse(refused.body)).toEqual({ error: "Connect a model in Settings first" });
+
+		const path = `/api/workspaces/${workspaceId}/bots/${botId}/__test/stored`;
+		const botStored = async () =>
+			(await (await context.request.get(path)).json()) as Record<string, unknown>;
+		await expect.poll(async () => (await botStored()).unfinished).toBeUndefined();
+		expect(Object.values(await botStored())).toContainEqual(
+			expect.objectContaining({ message: "Draft the brief.", status: "interrupted" }),
+		);
+		// Nothing probes the forgotten key either.
+		await new Promise((resolve) => setTimeout(resolve, 2500));
 		await expect(openCodeRequests(key)).resolves.toEqual(before);
 	});
 

@@ -424,7 +424,10 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		// Left in place, the default would come back to life with the next key connected.
 		if (defaultPair?.connectionId === connectionId) await this.ctx.storage.delete("defaultPair");
 		// Nothing left to probe: a key connected later starts out healthy.
+		const trouble = await this.ctx.storage.get<Trouble>(`trouble:${connectionId}`);
 		await this.ctx.storage.delete(`trouble:${connectionId}`);
+		// Their unfinished turns lost their connection, so they stop holding the bots' queues.
+		if (trouble) void this.#wake(trouble);
 		return true;
 	}
 

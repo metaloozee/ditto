@@ -52,8 +52,9 @@ export interface BotRpc {
 	/**
 	 * Starts a turn on the bot's override, or else `accountId`'s default pair, and answers its
 	 * SSE stream of `TurnEvent`s.
-	 * Refuses before any upstream call when the account has no usable connection. Queues the
-	 * message instead while a turn waits on its connection, or its connection is in trouble.
+	 * Refuses before any upstream call when the bot's pair names no usable connection, even
+	 * behind waiting work. Otherwise queues the message while a turn waits on its connection, or
+	 * its connection is in trouble.
 	 */
 	send(
 		accountId: string,
