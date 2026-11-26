@@ -35,12 +35,11 @@ const PROBE = "Reply with exactly one word: pong";
 const EXPIRY_MARGIN_MS = 3 * 60_000;
 
 /**
- * The included model (ADR-0011): the pinned Workers AI model, then the second choice the
- * decision record names for when Workers AI retires it. Both called tools in #35.
+ * The included model (ADR-0011): the pinned Workers AI model, which called tools in #35. The
+ * owner dropped the second choice, so once Workers AI retires it no included model is offered.
  */
 const INCLUDED_MODELS = [
 	{ id: "@cf/deepseek-ai/deepseek-v4.1-flash-1017", name: "DeepSeek V4.1 Flash" },
-	{ id: "@cf/zai-org/glm-5.3", name: "GLM-5.3" },
 ] as const;
 
 type IncludedModel = (typeof INCLUDED_MODELS)[number];
@@ -385,7 +384,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 				},
 			);
 			if (response.status !== 410) return response;
-			// Workers AI retired it (AiError 5028): every later request moves to the next choice.
+			// Workers AI retired it (AiError 5028): it is never asked again, and with no other choice left, nothing is.
 			await response.body?.cancel();
 			const retired = (await this.ctx.storage.get<string[]>("included:retired")) ?? [];
 			await this.ctx.storage.put("included:retired", [...retired, model.id]);

@@ -7,7 +7,6 @@ import { composer, messages, modelAccess, owner, post, send } from "./owner.ts";
 import { failNextWorkersAiRequest, workersAiRequests } from "./workers-ai.ts";
 
 const DEEPSEEK = "@cf/deepseek-ai/deepseek-v4.1-flash-1017";
-const GLM = "@cf/zai-org/glm-5.3";
 
 /**
  * Whether this account is offered the included model. Stage configuration decides it; the test
@@ -83,7 +82,7 @@ describe("the included model", () => {
 		);
 	});
 
-	it("moves to the recorded second choice once Workers AI retires the pinned model", async () => {
+	it("offers no included model once Workers AI retires the pinned one", async () => {
 		const { page, context, accountId, workspaceId, botId } = await owner();
 		await useIncluded(context);
 		await failNextWorkersAiRequest({
@@ -93,17 +92,19 @@ describe("the included model", () => {
 		});
 
 		const first = await post(context, workspaceId, botId, "What time is it?");
-		expect(first.body).toMatch(ISO_TIME);
-		expect(first.body).toContain('"status":"completed"');
+		expect(first.body).toContain('"status":"failed"');
 		const second = await post(context, workspaceId, botId, "And now?");
-		expect(second.body).toContain('"status":"completed"');
+		expect(second.status).toBe(409);
+		expect(JSON.parse(second.body)).toEqual({ error: "Connect a model in Settings first" });
 
+		// The retired model is asked once, and no other model is asked in its place.
 		const models = (await workersAiRequests(accountId)).map((request) => request.model);
-		expect(models).toEqual([DEEPSEEK, GLM, GLM, GLM, GLM]);
+		expect(models).toEqual([DEEPSEEK]);
+		const access = await context.request.get("/api/models");
+		expect(await access.json()).toEqual({ connections: [], defaultPair: null });
 		await open(page, "/settings");
-		await modelAccess(page)
-			.getByText("Included model: GLM-5.3, provided by this deployment")
-			.waitFor();
+		await modelAccess(page).getByRole("button", { name: "Connect an OpenCode API key" }).waitFor();
+		await expect(modelAccess(page).getByText("Included model").count()).resolves.toBe(0);
 	});
 });
 
@@ -113,7 +114,7 @@ describe("Settings and the pair select", () => {
 		await offerIncluded(context, true);
 		const key = await openCodeKey();
 		const connected = await context.request.post("/api/models/opencode", {
-			data: { key, model: "gpt-5.4-mini" },
+			data: { key, model: "deepseek-v4.1-flash" },
 		});
 		expect(connected.status()).toBe(204);
 
@@ -123,7 +124,7 @@ describe("Settings and the pair select", () => {
 			.getByText("Included model: DeepSeek V4.1 Flash, provided by this deployment")
 			.waitFor();
 		const trigger = section.getByRole("button", { name: "Default model" });
-		await expect(trigger.textContent()).resolves.toBe("gpt-5.4-mini · OpenCode");
+		await expect(trigger.textContent()).resolves.toBe("deepseek-v4.1-flash · OpenCode");
 
 		await trigger.click();
 		const picker = page.getByRole("dialog", { name: "Models" });
@@ -177,7 +178,7 @@ describe("an included model the owner hasn't chosen", () => {
 
 		const key = await openCodeKey();
 		const connected = await context.request.post("/api/models/opencode", {
-			data: { key, model: "gpt-5.4-mini" },
+			data: { key, model: "deepseek-v4.1-flash" },
 		});
 		expect(connected.status()).toBe(204);
 		expect((await context.request.delete("/api/models/opencode")).status()).toBe(204);
@@ -192,7 +193,9 @@ describe("a failure on one source", () => {
 		const { context, accountId, workspaceId, botId } = await owner();
 		await offerIncluded(context, true);
 		const key = await openCodeKey();
-		await context.request.post("/api/models/opencode", { data: { key, model: "gpt-5.4-mini" } });
+		await context.request.post("/api/models/opencode", {
+			data: { key, model: "deepseek-v4.1-flash" },
+		});
 
 		// The key is the default: a refusal fails the turn, and the included model isn't asked.
 		await failNextOpenCodeRequest({ status: 400 });
@@ -221,7 +224,9 @@ describe("a failure on one source", () => {
 		const { context, accountId, workspaceId, botId } = await owner();
 		await offerIncluded(context, true);
 		const key = await openCodeKey();
-		await context.request.post("/api/models/opencode", { data: { key, model: "gpt-5.4-mini" } });
+		await context.request.post("/api/models/opencode", {
+			data: { key, model: "deepseek-v4.1-flash" },
+		});
 		const chosen = await context.request.put(`/api/workspaces/${workspaceId}/bots/${botId}/model`, {
 			data: { override: { connectionId: "included", model: "DeepSeek V4.1 Flash" } },
 		});

@@ -56,7 +56,7 @@ The Codex backend that Pi's `openai-codex` provider calls (`https://chatgpt.com/
 - If Pi sends a field the flow rejects, such as a system-role item: call the flow through the OpenAI SDK, with the gap recorded against Pi.
 - If the owner stays on the free plan: no deployed Pi route exists. Ditto stays local-only, and model turns run under Node from the owner's machine, the #25 baseline shape.
 - If ChatGPT plan access is unavailable to the owner: the OpenCode API key route carries the harness and the first delegated task. Hosted ChatGPT onboarding keeps its own gates.
-- If the included Workers AI model is retired (HTTP 410, as Kimi K2.6 was): move to the second choice, `@cf/zai-org/glm-5.3` (#35). If no Workers AI model calls tools reliably: Ditto offers no included model and relies on the OpenCode API key.
+- If the included Workers AI model is retired (HTTP 410, as Kimi K2.6 was): Ditto offers no included model. The owner dropped the second choice, `@cf/zai-org/glm-5.3` (#35), on 2026-11-26 (see [Candidate included model](#candidate-included-model)). If no Workers AI model calls tools reliably: Ditto offers no included model and relies on the OpenCode API key.
 
 **Owner evidence that confirms or overturns it:** #25 day 1 and day 2 (refresh of a day-old token) and the OpenCode baseline; #26 in local workerd on both routes, with real CPU figures; #30 day 1 and day 2 from Cloudflare; #31 on Workers Paid; #34 and #35 from a Durable Object. A refusal from Cloudflare's network on the supported endpoint, or a deployed CPU figure above what Workers Paid allows per request, would overturn the Durable Object route. Neither has been observed.
 
@@ -529,10 +529,12 @@ Every trial request was attributed: 9 of 9 for each model, read back through the
 
 **Candidate: `@cf/deepseek-ai/deepseek-v4.1-flash-1017`**, with `@cf/zai-org/glm-5.3` as the second choice. Both called the tool and used its result on every run. DeepSeek cost about a seventh of GLM-5.3 per run; GLM-5.3 used less CPU and answered the plain turn faster.
 
+**2026-11-26 · owner decision: no second choice.** The included model is DeepSeek V4.1 Flash alone. The owner dropped GLM-5.3 as the fallback. When Workers AI retires DeepSeek (HTTP 410), Ditto offers no included model, and a turn that chose it is refused until the owner connects a model. The GLM-5.3 runs above stay as evidence.
+
 **Unresolved limits:**
 
 - The tool test is one tool with no arguments over two requests. Multi-step tasks, tools with arguments and long replies are unmeasured.
-- Workers AI retires models on its own schedule: Kimi K2.6 was deprecated three days before this trial and Pi's catalogue still lists it. Ditto must pin the included model and handle a 410 (AiError 5028) by moving to the second choice.
+- Workers AI retires models on its own schedule: Kimi K2.6 was deprecated three days before this trial and Pi's catalogue still lists it. Ditto must pin the included model and handle a 410 (AiError 5028). Since 2026-11-26 it handles one by offering no included model.
 - The spend limit is not built. The gateway attributes every request, including refused ones, so the data a per-account limit needs exists.
 
 ##### Teardown
