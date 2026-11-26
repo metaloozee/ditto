@@ -51,7 +51,7 @@ export const botPath = (workspaceId: string, botId: string) =>
 	`/api/workspaces/${workspaceId}/bots/${botId}`;
 
 /** Connects a fresh OpenCode key on `model`, which becomes the default pair if none is. */
-export async function connectKey(context: BrowserContext, model = "gpt-5.4-mini") {
+export async function connectKey(context: BrowserContext, model = "deepseek-v4.1-flash") {
 	const key = await openCodeKey();
 	const connected = await context.request.post("/api/models/opencode", { data: { key, model } });
 	expect(connected.status()).toBe(204);

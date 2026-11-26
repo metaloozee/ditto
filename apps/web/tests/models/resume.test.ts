@@ -24,7 +24,7 @@ import {
 	PROBE,
 } from "./owner.ts";
 
-const OPENCODE: Pair = { connectionId: "opencode", model: "gpt-5.4-mini" };
+const OPENCODE: Pair = { connectionId: "opencode", model: "deepseek-v4.1-flash" };
 const CHATGPT: Pair = { connectionId: "chatgpt", model: "gpt-5.5" };
 
 /**

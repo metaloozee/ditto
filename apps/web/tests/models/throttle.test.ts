@@ -92,7 +92,7 @@ describe("a limit mid-turn", () => {
 		await messages(page)
 			.getByText("I got through the first two sections. Then the third.")
 			.waitFor({ timeout: 20_000 });
-		await messages(page).getByText("Carried on with gpt-5.4-mini · OpenCode").waitFor();
+		await messages(page).getByText("Carried on with deepseek-v4.1-flash · OpenCode").waitFor();
 		await messages(page).getByText("Hiring is up by three.").waitFor({ timeout: 10_000 });
 		await messages(page).getByText("The budget holds.").waitFor({ timeout: 10_000 });
 		await expect(messages(page).getByText("Queued", { exact: true }).count()).resolves.toBe(0);
@@ -104,7 +104,8 @@ describe("a limit mid-turn", () => {
 			"Also add the hiring numbers.",
 			"And the budget.",
 		]);
-		for (const request of await openCodeRequests(key)) expect(request.model).toBe("gpt-5.4-mini");
+		for (const request of await openCodeRequests(key))
+			expect(request.model).toBe("deepseek-v4.1-flash");
 		await expect(connection(context)).resolves.toMatchObject({ state: "Connected" });
 	}, 90_000);
 });
@@ -132,7 +133,7 @@ describe("a limit with a reset time", () => {
 		const line = messages(page).getByText(detail);
 		await line.waitFor();
 		// The card fits the phone's width.
-		const box = await messages(page).getByText("gpt-5.4-mini · OpenCode").boundingBox();
+		const box = await messages(page).getByText("deepseek-v4.1-flash · OpenCode").boundingBox();
 		expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
 		await open(page, "/settings");
 		await page.getByRole("region", { name: "Model access" }).getByText(detail).waitFor();
@@ -159,7 +160,7 @@ describe("an interrupted turn and its queue", () => {
 		const stored = await botStored(context, workspaceId, botId);
 		const [turn] = turnsIn(stored) as { id: string }[];
 		expect(turn).toMatchObject({
-			pair: { connectionId: "opencode", model: "gpt-5.4-mini" },
+			pair: { connectionId: "opencode", model: "deepseek-v4.1-flash" },
 			message: "Write the brief.",
 			reply: "Half done.",
 			status: "interrupted",

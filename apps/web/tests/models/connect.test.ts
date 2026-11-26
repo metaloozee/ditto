@@ -40,11 +40,11 @@ describe("connecting an OpenCode API key", () => {
 		const first = await owner({ user });
 		const key = await openCodeKey();
 
-		await connectInSettings(first.page, key, "gpt-5.4");
+		await connectInSettings(first.page, key, "glm-5.3");
 		await modelAccess(first.page).getByText("Connected", { exact: true }).waitFor();
-		await expect(openCodeRequests(key)).resolves.toEqual([{ key, model: "gpt-5.4" }]);
+		await expect(openCodeRequests(key)).resolves.toEqual([{ key, model: "glm-5.3" }]);
 
-		const expected = { connected: true, defaultPair: "gpt-5.4 · OpenCode" };
+		const expected = { connected: true, defaultPair: "glm-5.3 · OpenCode" };
 		await open(first.page, "/settings");
 		await expect(shown(first.page)).resolves.toEqual(expected);
 
@@ -55,19 +55,19 @@ describe("connecting an OpenCode API key", () => {
 
 	it("keeps the first pair as the default, and moves it only when the owner chooses another", async () => {
 		const { context } = await owner();
-		expect((await connect(context, await openCodeKey(), "gpt-5.4-mini")).status()).toBe(204);
+		expect((await connect(context, await openCodeKey(), "deepseek-v4.1-flash")).status()).toBe(204);
 		// Connecting again replaces the key, not the default.
-		expect((await connect(context, await openCodeKey(), "gpt-5.5")).status()).toBe(204);
+		expect((await connect(context, await openCodeKey(), "glm-5.3-flash")).status()).toBe(204);
 		await expect(view(context)).resolves.toMatchObject({
-			defaultPair: { connectionId: "opencode", model: "gpt-5.4-mini" },
+			defaultPair: { connectionId: "opencode", model: "deepseek-v4.1-flash" },
 		});
 
 		const choose = (pair: unknown) => context.request.put("/api/models/default", { data: pair });
-		expect((await choose({ connectionId: "opencode", model: "gpt-5.5" })).status()).toBe(204);
+		expect((await choose({ connectionId: "opencode", model: "glm-5.3-flash" })).status()).toBe(204);
 		expect((await choose({ connectionId: "opencode", model: "not-offered" })).status()).toBe(404);
 		expect((await choose({ connectionId: "chatgpt", model: "gpt-5.5" })).status()).toBe(404);
 		await expect(view(context)).resolves.toMatchObject({
-			defaultPair: { connectionId: "opencode", model: "gpt-5.5" },
+			defaultPair: { connectionId: "opencode", model: "glm-5.3-flash" },
 		});
 	});
 
@@ -75,7 +75,7 @@ describe("connecting an OpenCode API key", () => {
 		const { page, context } = await owner();
 		const rejected = `sk-oc-MARKER-${randomUUID()}`;
 
-		await connectInSettings(page, rejected, "gpt-5.4-mini");
+		await connectInSettings(page, rejected, "deepseek-v4.1-flash");
 		const field = modelAccess(page).getByLabel("API key");
 		await expect.poll(() => field.getAttribute("aria-invalid"), { timeout: 10_000 }).toBe("true");
 		const note = page.locator(`#${await field.getAttribute("aria-describedby")}`);
@@ -91,7 +91,7 @@ describe("connecting an OpenCode API key", () => {
 	it("stores nothing while OpenCode is down, and doesn't call the key rejected", async () => {
 		const { context } = await owner();
 		await failNextOpenCodeRequest({ status: 503 });
-		const response = await connect(context, await openCodeKey(), "gpt-5.4-mini");
+		const response = await connect(context, await openCodeKey(), "deepseek-v4.1-flash");
 		expect(response.status()).toBe(502);
 		await expect(response.json()).resolves.toEqual({
 			error: "OpenCode isn’t responding. Try again in a moment.",
@@ -107,7 +107,7 @@ describe("the stored key", () => {
 		const answers: Promise<string>[] = [];
 		page.on("response", (response) => answers.push(response.text().catch(() => "")));
 
-		await connectInSettings(page, key, "gpt-5.4-mini");
+		await connectInSettings(page, key, "deepseek-v4.1-flash");
 		await modelAccess(page).getByText("Connected", { exact: true }).waitFor();
 		await open(page, "/settings");
 		answers.push((await context.request.get("/api/models")).text());
@@ -130,12 +130,12 @@ describe("the stored key", () => {
 		const alice = await owner();
 		const bob = await owner();
 		const key = await openCodeKey();
-		expect((await connect(alice.context, key, "gpt-5.4-mini")).status()).toBe(204);
+		expect((await connect(alice.context, key, "deepseek-v4.1-flash")).status()).toBe(204);
 
 		await expect(view(bob.context)).resolves.toEqual(NOTHING);
 		await expect(stored(bob.context)).resolves.toBe("{}");
 		const borrowed = await bob.context.request.put("/api/models/default", {
-			data: { connectionId: "opencode", model: "gpt-5.4-mini" },
+			data: { connectionId: "opencode", model: "deepseek-v4.1-flash" },
 		});
 		expect(borrowed.status()).toBe(404);
 		await open(bob.page, "/settings");
@@ -158,7 +158,7 @@ describe("the stored key", () => {
 			return accounts.map((account) => account.providerId).sort();
 		};
 		const before = await methods();
-		expect((await connect(context, await openCodeKey(), "gpt-5.4-mini")).status()).toBe(204);
+		expect((await connect(context, await openCodeKey(), "deepseek-v4.1-flash")).status()).toBe(204);
 		await expect(methods()).resolves.toEqual(before);
 		expect(before).toEqual(["github"]);
 	});
@@ -170,9 +170,9 @@ describe("model access without a session", () => {
 		const key = await openCodeKey();
 		const requests = [
 			context.request.get("/api/models"),
-			connect(context, key, "gpt-5.4-mini"),
+			connect(context, key, "deepseek-v4.1-flash"),
 			context.request.put("/api/models/default", {
-				data: { connectionId: "opencode", model: "gpt-5.4-mini" },
+				data: { connectionId: "opencode", model: "deepseek-v4.1-flash" },
 			}),
 			context.request.get("/api/models/__test/stored"),
 			context.request.get("/api/models/anything-else"),

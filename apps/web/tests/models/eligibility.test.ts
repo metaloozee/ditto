@@ -147,7 +147,7 @@ describe("other model access", () => {
 
 		const key = await openCodeKey();
 		const connected = await context.request.post("/api/models/opencode", {
-			data: { key, model: "gpt-5.4-mini" },
+			data: { key, model: "deepseek-v4.1-flash" },
 		});
 		expect(connected.status()).toBe(204);
 		expect((await post(context, workspaceId, botId, "Hello")).status).toBe(200);

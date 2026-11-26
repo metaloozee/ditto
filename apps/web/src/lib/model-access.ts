@@ -20,14 +20,15 @@ export interface Connection {
 }
 
 /**
- * The models an OpenCode key is offered with: OpenCode Zen's OpenAI Responses models, the
- * route the feasibility study chose. The first is the one it proved.
+ * The models an OpenCode key is offered with, as the owner chose them; the first is the one a
+ * connect form starts on. Pi's catalogue says which OpenCode endpoint serves each: chat
+ * completions for all but `gpt-6-luna`, which is on Responses.
  */
 export const OPENCODE_MODELS: readonly string[] = [
-	"gpt-5.4-mini",
-	"gpt-5.4",
-	"gpt-5.5",
-	"gpt-5.6-luna",
+	"deepseek-v4.1-flash",
+	"glm-5.3",
+	"glm-5.3-flash",
+	"gpt-6-luna",
 ];
 
 /**

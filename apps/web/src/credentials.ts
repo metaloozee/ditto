@@ -1,4 +1,5 @@
 import { createAiBindingFetch } from "@earendil-works/pi-ai/api/cloudflare-ai-binding";
+import { OPENCODE_MODELS as PI_OPENCODE_MODELS } from "@earendil-works/pi-ai/providers/opencode.models";
 import { DurableObject } from "cloudflare:workers";
 
 import type { Bot } from "./bot.ts";
@@ -196,16 +197,25 @@ async function seal(secret: string, plain: string, scope: string): Promise<Seale
 	return { iv: base64(iv), data: base64(data) };
 }
 
-/** Asks OpenCode for the smallest reply on `model` with `key`, the body left unread. */
+/**
+ * Asks OpenCode for the smallest reply on `model` with `key`, the body left unread. It goes to
+ * the endpoint Pi's catalogue serves the model on, as the model's turns do.
+ */
 async function askOpenCode(
 	base: string,
 	key: string,
 	model: string,
 ): Promise<Response | "unreachable"> {
-	const response = await fetch(`${base}/responses`, {
+	const responses =
+		Object.values(PI_OPENCODE_MODELS).find((each) => each.id === model)?.api === "openai-responses";
+	const response = await fetch(`${base}/${responses ? "responses" : "chat/completions"}`, {
 		method: "POST",
 		headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-		body: JSON.stringify({ model, input: PROBE, store: false }),
+		body: JSON.stringify(
+			responses
+				? { model, input: PROBE, store: false }
+				: { model, messages: [{ role: "user", content: PROBE }] },
+		),
 	}).catch(() => "unreachable" as const);
 	if (response !== "unreachable") await response.body?.cancel();
 	return response;

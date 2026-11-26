@@ -106,7 +106,7 @@ describe("after a disconnect", () => {
 		const { context, workspaceId, botId } = await owner();
 		const key = await connectKey(context);
 		const pinned = await context.request.put(`/api/workspaces/${workspaceId}/bots/${botId}/model`, {
-			data: { override: { connectionId: "opencode", model: "gpt-5.5" } },
+			data: { override: { connectionId: "opencode", model: "glm-5.3-flash" } },
 		});
 		expect(pinned.status()).toBe(204);
 		const before = await openCodeRequests();
@@ -142,17 +142,17 @@ describe("after a disconnect", () => {
 		const old = await connectKey(context);
 		expect((await disconnect(context)).status()).toBe(204);
 
-		const key = await connectKey(context, "gpt-5.5");
+		const key = await connectKey(context, "glm-5.3-flash");
 		await expect(view(context)).resolves.toMatchObject({
 			connections: [{ id: "opencode", state: "Connected" }],
-			defaultPair: { connectionId: "opencode", model: "gpt-5.5" },
+			defaultPair: { connectionId: "opencode", model: "glm-5.3-flash" },
 		});
 		const { status, body } = await post(context, workspaceId, botId, "Back again?");
 		expect(status).toBe(200);
 		expect(body).toContain('"status":"completed"');
 		await expect(openCodeRequests(key)).resolves.toEqual([
-			{ key, model: "gpt-5.5" },
-			{ key, model: "gpt-5.5" },
+			{ key, model: "glm-5.3-flash" },
+			{ key, model: "glm-5.3-flash" },
 		]);
 		await expect(openCodeRequests(old)).resolves.toHaveLength(1);
 	});

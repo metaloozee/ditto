@@ -30,7 +30,10 @@ export function faultOf(
 		const resets = resetsAt(answer.headers);
 		return resets ? { state: "Throttled", resetsAt: resets } : { state: "Throttled" };
 	}
-	if (/rate_limit_exceeded|usage_limit_reached/i.test(error)) return { state: "Throttled" };
+	// Pi keeps a chat completions stream's error message but not its code, so the words count too.
+	if (/rate_limit_exceeded|usage_limit_reached|rate limit/i.test(error)) {
+		return { state: "Throttled" };
+	}
 	// The provider no longer accepts the credential: only the owner can fix that.
 	if (answer?.status === 401 || answer?.status === 403) return { state: "ReconnectNeeded" };
 	if (answer && answer.status >= 500) return { state: "Unavailable" };

@@ -3,7 +3,15 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, inject, it } from "vite-plus/test";
 
 import { newVisitor, open } from "../auth/visitor.ts";
-import { openCodeRequests, openCodeTurnHungUp, replyToNextOpenCodeTurn } from "./opencode.ts";
+import {
+	clearOpenCodeFault,
+	openCodeApis,
+	openCodeAsked,
+	openCodeRequests,
+	openCodeTurnHungUp,
+	replyToNextOpenCodeTurn,
+	startOpenCodeOutage,
+} from "./opencode.ts";
 import {
 	botPath,
 	botStored,
@@ -13,6 +21,7 @@ import {
 	owner,
 	PHONE,
 	post,
+	PROBE,
 	send,
 } from "./owner.ts";
 
@@ -21,7 +30,7 @@ const markerOf = (key: string) => key.slice("sk-oc-MARKER-".length);
 describe("a turn on the default pair", () => {
 	it("streams the reply in, from one upstream request carrying the account's key", async () => {
 		const { page, context } = await owner();
-		const key = await connectKey(context, "gpt-5.4");
+		const key = await connectKey(context, "glm-5.3");
 		await replyToNextOpenCodeTurn({ deltas: ["Here is ", "the weekly ", "update."] });
 
 		await open(page, "/");
@@ -32,8 +41,8 @@ describe("a turn on the default pair", () => {
 		await page.getByRole("button", { name: "Send" }).waitFor();
 		// The first request is the key check on connect; the turn adds exactly one.
 		await expect(openCodeRequests(key)).resolves.toEqual([
-			{ key, model: "gpt-5.4" },
-			{ key, model: "gpt-5.4" },
+			{ key, model: "glm-5.3" },
+			{ key, model: "glm-5.3" },
 		]);
 	});
 
@@ -58,7 +67,7 @@ describe("a turn on the default pair", () => {
 		expect(turns).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
-					pair: { connectionId: "opencode", model: "gpt-5.4-mini" },
+					pair: { connectionId: "opencode", model: "deepseek-v4.1-flash" },
 					message: "Summarize my week.",
 					reply: "pong",
 					status: "completed",
@@ -72,8 +81,8 @@ describe("a turn on the default pair", () => {
 	it("uses each account's own key", async () => {
 		const alice = await owner();
 		const bob = await owner();
-		const aliceKey = await connectKey(alice.context, "gpt-5.4");
-		const bobKey = await connectKey(bob.context, "gpt-5.5");
+		const aliceKey = await connectKey(alice.context, "glm-5.3");
+		const bobKey = await connectKey(bob.context, "glm-5.3-flash");
 
 		const [fromAlice, fromBob] = await Promise.all([
 			post(alice.context, alice.workspaceId, alice.botId, "Hello from Alice"),
@@ -83,13 +92,43 @@ describe("a turn on the default pair", () => {
 		expect(fromBob.status).toBe(200);
 
 		await expect(openCodeRequests(aliceKey)).resolves.toEqual([
-			{ key: aliceKey, model: "gpt-5.4" },
-			{ key: aliceKey, model: "gpt-5.4" },
+			{ key: aliceKey, model: "glm-5.3" },
+			{ key: aliceKey, model: "glm-5.3" },
 		]);
 		await expect(openCodeRequests(bobKey)).resolves.toEqual([
-			{ key: bobKey, model: "gpt-5.5" },
-			{ key: bobKey, model: "gpt-5.5" },
+			{ key: bobKey, model: "glm-5.3-flash" },
+			{ key: bobKey, model: "glm-5.3-flash" },
 		]);
+	});
+});
+
+describe("each API Pi catalogues an OpenCode model under", () => {
+	it.each([
+		["deepseek-v4.1-flash", "chat-completions"],
+		["gpt-6-luna", "responses"],
+	])("checks the key, runs a turn and probes %s on %s", async (model, api) => {
+		const { context, workspaceId, botId } = await owner();
+		const key = await connectKey(context, model);
+		await replyToNextOpenCodeTurn({ deltas: ["Here is ", "the update."] });
+
+		const turn = await post(context, workspaceId, botId, "Draft the update.");
+		expect(turn.body).toContain('"text":"the update."');
+		expect(turn.body).toContain('"status":"completed"');
+
+		await startOpenCodeOutage(key);
+		const interrupted = await post(context, workspaceId, botId, "And the next one?");
+		expect(interrupted.body).toContain('"status":"interrupted"');
+		await clearOpenCodeFault(key);
+		const checked = await context.request.post("/api/models/opencode/check");
+		expect(await checked.json()).toEqual({ state: "Connected" });
+
+		const asked = await openCodeAsked(key);
+		expect(asked.slice(0, 3)).toEqual([PROBE, "Draft the update.", "And the next one?"]);
+		expect(asked.filter((each) => each === PROBE).length).toBeGreaterThanOrEqual(2);
+		const apis = await openCodeApis(key);
+		expect(apis).toEqual(apis.map(() => api));
+		const requests = await openCodeRequests(key);
+		expect(requests).toEqual(requests.map(() => ({ key, model })));
 	});
 });
 

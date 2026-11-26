@@ -30,10 +30,11 @@ async function connectionState(context: BrowserContext) {
 
 const requestCount = (key: string) => openCodeRequests(key).then((all) => all.length);
 
-const card = (page: Page) => messages(page).getByRole("group", { name: "gpt-5.4-mini · OpenCode" });
+const card = (page: Page) =>
+	messages(page).getByRole("group", { name: "deepseek-v4.1-flash · OpenCode" });
 
-const PAIR = { connectionId: "opencode", model: "gpt-5.4-mini" };
-const ON_PAIR = { key: expect.any(String), model: "gpt-5.4-mini" };
+const PAIR = { connectionId: "opencode", model: "deepseek-v4.1-flash" };
+const ON_PAIR = { key: expect.any(String), model: "deepseek-v4.1-flash" };
 
 describe("a provider outage", () => {
 	it("shows Unavailable, keeps checking with backoff, and resumes the turn on its original pair", async () => {
@@ -63,7 +64,7 @@ describe("a provider outage", () => {
 
 		await clearOpenCodeFault(key);
 		await messages(page).getByText("pong").waitFor({ timeout: 20_000 });
-		await messages(page).getByText("Carried on with gpt-5.4-mini · OpenCode").waitFor();
+		await messages(page).getByText("Carried on with deepseek-v4.1-flash · OpenCode").waitFor();
 		expect(await turns(context, workspaceId, botId)).toEqual([
 			expect.objectContaining({ pair: PAIR, status: "completed", reply: "pong" }),
 		]);
@@ -146,7 +147,7 @@ describe("a revoked key", () => {
 		await expect(requestCount(revoked)).resolves.toBe(2);
 		// The connect check, the resumed turn and the queued one, all with the new key.
 		await expect(openCodeRequests(fresh)).resolves.toEqual(
-			Array.from({ length: 3 }, () => ({ key: fresh, model: "gpt-5.4-mini" })),
+			Array.from({ length: 3 }, () => ({ key: fresh, model: "deepseek-v4.1-flash" })),
 		);
 	}, 60_000);
 });
