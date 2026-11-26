@@ -1,8 +1,16 @@
 import { DurableObject } from "cloudflare:workers";
 
-import type { ConnectRefusal, CredentialsRpc, Grant, ModelAccessView } from "./credentials-rpc.ts";
+import type { Bot } from "./bot.ts";
+import type {
+	ConnectRefusal,
+	CredentialsRpc,
+	Fault,
+	Grant,
+	ModelAccessView,
+} from "./credentials-rpc.ts";
 import type { AuthEnv } from "./lib/auth.ts";
 import { OPENCODE_MODELS, type Pair } from "./lib/model-access.ts";
+import { faultOf } from "./lib/provider-fault.ts";
 
 const OPENCODE = "https://opencode.ai/inference/openai/v1";
 
@@ -17,6 +25,33 @@ interface StoredConnection {
 	key: Sealed;
 	connectedAt: string;
 }
+
+/**
+ * A connection in trouble, stored as `trouble:<connectionId>` until a probe gets an answer.
+ * `bots` have work waiting on it, and are woken on recovery.
+ */
+interface Trouble extends Fault {
+	accountId: string;
+	/** The model the probes ask: the one the first interrupted turn was on. */
+	model: string;
+	/** Failed probes so far, which set the next one's delay. */
+	attempt: number;
+	probeAt: number;
+	bots: string[];
+}
+
+/** Probes wait a second, then twice as long after each failure, up to five minutes. */
+const PROBE_BASE_MS = 1000;
+const PROBE_MAX_MS = 5 * 60_000;
+
+/** The next probe: after the backoff, and never before a limit's reset time. */
+function nextProbe(attempt: number, resetsAt: string | undefined, now = Date.now()): number {
+	const backoff = Math.min(PROBE_BASE_MS * 2 ** attempt, PROBE_MAX_MS);
+	return Math.max(now + backoff, resetsAt ? Date.parse(resetsAt) : 0);
+}
+
+const faultIn = ({ state, resetsAt }: Trouble): Fault =>
+	resetsAt ? { state, resetsAt } : { state };
 
 const base64 = (bytes: ArrayBuffer | Uint8Array) =>
 	btoa(String.fromCharCode(...new Uint8Array(bytes)));
@@ -82,9 +117,18 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	async view(): Promise<ModelAccessView> {
 		const opencode = await this.ctx.storage.get<StoredConnection>("connection:opencode");
 		const defaultPair = (await this.ctx.storage.get<Pair>("defaultPair")) ?? null;
+		const trouble = await this.ctx.storage.get<Trouble>("trouble:opencode");
 		return {
 			connections: opencode
-				? [{ id: "opencode", provider: "opencode", state: "Connected", models: OPENCODE_MODELS }]
+				? [
+						{
+							id: "opencode",
+							provider: "opencode",
+							state: trouble?.state ?? "Connected",
+							...(trouble?.resetsAt ? { resetsAt: trouble.resetsAt } : {}),
+							models: OPENCODE_MODELS,
+						},
+					]
 				: [],
 			defaultPair,
 		};
@@ -132,15 +176,108 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		) {
 			return { refused: "no-model" };
 		}
+		const granted = { connectionId: wanted.connectionId, model: wanted.model };
+		const trouble = await this.ctx.storage.get<Trouble>(`trouble:${granted.connectionId}`);
+		if (trouble) return { refused: "interrupted", pair: granted, fault: faultIn(trouble) };
 		const key = await open(
 			this.env.CREDENTIALS_ENCRYPTION_KEY,
 			opencode.key,
 			`${accountId}:opencode`,
 		);
-		return {
-			pair: { connectionId: wanted.connectionId, model: wanted.model },
-			credential: { type: "api_key", key },
+		return { pair: granted, credential: { type: "api_key", key } };
+	}
+
+	async interrupted(
+		accountId: string,
+		botId: string,
+		pair: Pair,
+		fault?: Fault,
+	): Promise<Fault | null> {
+		const name = `trouble:${pair.connectionId}`;
+		const known = await this.ctx.storage.get<Trouble>(name);
+		if (!known && !fault) return null;
+		const trouble: Trouble = known ?? {
+			state: "Throttled",
+			accountId,
+			model: pair.model,
+			attempt: 0,
+			probeAt: 0,
+			bots: [],
 		};
+		if (fault) {
+			trouble.state = fault.state;
+			if (fault.resetsAt) trouble.resetsAt = fault.resetsAt;
+		}
+		if (!trouble.bots.includes(botId)) trouble.bots.push(botId);
+		if (!known) trouble.probeAt = nextProbe(0, trouble.resetsAt);
+		await this.ctx.storage.put(name, trouble);
+		await this.#schedule();
+		return faultIn(trouble);
+	}
+
+	/** Probes each connection in trouble that is due, and wakes its bots once one answers. */
+	override async alarm(): Promise<void> {
+		const troubles = await this.ctx.storage.list<Trouble>({ prefix: "trouble:" });
+		for (const [name, trouble] of troubles) {
+			if (trouble.probeAt > Date.now()) continue;
+			const answer = await this.#probe(trouble);
+			if (answer?.ok) {
+				await this.ctx.storage.delete(name);
+				await Promise.all(
+					trouble.bots.map((botId) =>
+						this.#bot(botId)
+							.recover(trouble.accountId)
+							.catch((error: unknown) => console.error("A bot didn’t recover:", error)),
+					),
+				);
+				continue;
+			}
+			// No answer, or one that names no fault, keeps the state the connection had.
+			const fault = faultOf(answer);
+			if (fault) Object.assign(trouble, fault);
+			trouble.attempt += 1;
+			trouble.probeAt = nextProbe(trouble.attempt, trouble.resetsAt);
+			await this.ctx.storage.put(name, trouble);
+		}
+		await this.#schedule();
+	}
+
+	/** Sets the alarm for the soonest probe due, while any connection is in trouble. */
+	async #schedule(): Promise<void> {
+		const troubles = await this.ctx.storage.list<Trouble>({ prefix: "trouble:" });
+		const due = Math.min(...[...troubles.values()].map((trouble) => trouble.probeAt));
+		if (Number.isFinite(due)) await this.ctx.storage.setAlarm(due);
+	}
+
+	/** Asks the provider for the smallest reply with the stored key. Null when it didn't answer. */
+	async #probe(trouble: Trouble): Promise<Response | null> {
+		const opencode = await this.ctx.storage.get<StoredConnection>("connection:opencode");
+		if (!opencode) return null;
+		const key = await open(
+			this.env.CREDENTIALS_ENCRYPTION_KEY,
+			opencode.key,
+			`${trouble.accountId}:opencode`,
+		);
+		const response = await fetch(`${this.env.OPENCODE_BASE_URL ?? OPENCODE}/responses`, {
+			method: "POST",
+			headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+			body: JSON.stringify({
+				model: trouble.model,
+				input: "Reply with exactly one word: pong",
+				store: false,
+			}),
+		}).catch(() => null);
+		await response?.body?.cancel();
+		return response;
+	}
+
+	/**
+	 * A bot's Bot object. Workers types keep only `fetch` on a stub whose shape lacks their
+	 * brand, so the RPC surface is restored here.
+	 */
+	#bot(botId: string): DurableObjectStub<Bot> {
+		const namespace = this.env.BOT as unknown as DurableObjectNamespace<Bot>;
+		return namespace.getByName(botId);
 	}
 
 	async stored(): Promise<Record<string, unknown>> {
