@@ -441,9 +441,11 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		const wanted = pair ?? (await this.#defaultPair(included));
 		// Never moved to another source: an included pair gets the included model or nothing.
 		if (wanted?.connectionId === INCLUDED) {
-			return included
-				? { pair: { connectionId: INCLUDED, model: included.name }, included: included.id }
-				: { refused: "no-model" };
+			if (!included) return { refused: "no-model" };
+			const granted = { connectionId: INCLUDED, model: included.name };
+			const trouble = await this.ctx.storage.get<Trouble>(`trouble:${INCLUDED}`);
+			if (trouble) return { refused: "interrupted", pair: granted, fault: faultIn(trouble) };
+			return { pair: granted, included: included.id };
 		}
 		if (wanted?.connectionId === "chatgpt") return this.#grantChatGPT(accountId, wanted);
 		const opencode = await this.ctx.storage.get<StoredConnection>("connection:opencode");
@@ -506,7 +508,11 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	}
 
 	async check(accountId: string, connectionId: string): Promise<ConnectionState | null> {
-		if (!(await this.ctx.storage.get(`connection:${connectionId}`))) return null;
+		const exists =
+			connectionId === INCLUDED
+				? await this.#includedModel()
+				: await this.ctx.storage.get(`connection:${connectionId}`);
+		if (!exists) return null;
 		const name = `trouble:${connectionId}`;
 		const trouble = await this.ctx.storage.get<Trouble>(name);
 		if (!trouble) return "Connected";
@@ -539,7 +545,11 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		const fault =
 			name === "trouble:chatgpt"
 				? await this.#probeChatGPT(trouble)
-				: answered(await this.#probe(trouble));
+				: answered(
+						name === `trouble:${INCLUDED}`
+							? await this.#probeIncluded(trouble)
+							: await this.#probe(trouble),
+					);
 		if (fault === "ok") {
 			await this.ctx.storage.delete(name);
 			return { state: "Connected", woken: this.#wake(trouble) };
@@ -593,6 +603,19 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 				store: false,
 			}),
 		}).catch(() => "unreachable" as const);
+		if (response !== "unreachable") await response.body?.cancel();
+		return response;
+	}
+
+	/** The same probe on the included model, through the account's own gateway route. */
+	async #probeIncluded(trouble: Trouble): Promise<Response | "unreachable" | null> {
+		if (!(await this.#includedModel())) return null;
+		const body = JSON.stringify({
+			messages: [{ role: "user", content: "Reply with exactly one word: pong" }],
+		});
+		const response = await this.included(trouble.accountId, body).catch(
+			() => "unreachable" as const,
+		);
 		if (response !== "unreachable") await response.body?.cancel();
 		return response;
 	}

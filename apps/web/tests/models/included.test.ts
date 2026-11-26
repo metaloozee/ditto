@@ -33,6 +33,26 @@ async function offerIncluded(context: BrowserContext, offered: boolean) {
 	expect(response.status()).toBe(204);
 }
 
+const INCLUDED_PAIR = { connectionId: "included", model: "DeepSeek V4.1 Flash" };
+
+/** Offers this account the included model and makes it the default pair. */
+async function useIncluded(context: BrowserContext) {
+	await offerIncluded(context, true);
+	const chosen = await context.request.put("/api/models/default", { data: INCLUDED_PAIR });
+	expect(chosen.status()).toBe(204);
+}
+
+/** The bot's turn records, as stored. */
+async function turns(context: BrowserContext, workspaceId: string, botId: string) {
+	const response = await context.request.get(
+		`/api/workspaces/${workspaceId}/bots/${botId}/__test/stored`,
+	);
+	const stored = (await response.json()) as Record<string, unknown>;
+	return Object.entries(stored).flatMap(([name, value]) =>
+		name.startsWith("turn:") ? [value] : [],
+	);
+}
+
 /** Sends `message` straight to the bot and answers the whole response, its SSE included. */
 async function post(context: BrowserContext, workspaceId: string, botId: string, message: string) {
 	const response = await context.request.post(
@@ -225,4 +245,29 @@ describe("a failure on one source", () => {
 		// Only the key check on connect: no turn ever reached the key.
 		await expect(openCodeRequests(key)).resolves.toHaveLength(1);
 	});
+});
+
+describe("a limit or an outage on the included model", () => {
+	it.each([
+		{ status: 429, interruption: "Throttled" },
+		{ status: 503, interruption: "Unavailable" },
+	])(
+		"interrupts the turn at $status, then resumes it on the included model once it answers",
+		async ({ status, interruption }) => {
+			const { context, accountId, workspaceId, botId } = await owner();
+			await useIncluded(context);
+			await failNextWorkersAiRequest({ model: DEEPSEEK, status });
+
+			const sent = await post(context, workspaceId, botId, "What time is it?");
+			expect(sent.body).toContain('"status":"interrupted"');
+			await expect
+				.poll(() => turns(context, workspaceId, botId), { timeout: 15_000 })
+				.toEqual([
+					expect.objectContaining({ pair: INCLUDED_PAIR, status: "completed", interruption }),
+				]);
+			const models = (await workersAiRequests(accountId)).map((request) => request.model);
+			expect(models.length).toBeGreaterThan(2);
+			expect(models).toEqual(models.map(() => DEEPSEEK));
+		},
+	);
 });

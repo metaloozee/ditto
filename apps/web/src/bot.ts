@@ -442,6 +442,12 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 				throw error;
 			}
 		};
+		// A limit or an outage holds the turn for its source; the included model has no connection
+		// for the owner to reconnect, so anything else just fails its turn.
+		const faultFrom = (error?: string) => {
+			const found = seen.fault ?? faultOf(seen.answer, error);
+			return "included" in grant && found?.state === "ReconnectNeeded" ? null : found;
+		};
 		try {
 			const route = await this.#model(accountId, grant, seen);
 			const { models, model } = route;
@@ -496,10 +502,7 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 				context.messages.push(reply, ...reply.content.flatMap(toolResult));
 			}
 			const errored = reply.stopReason === "error" || reply.stopReason === "aborted";
-			// A connection's limit holds the turn for it; the included model has no connection to wait on.
-			if (errored && !signal.aborted && !("included" in grant)) {
-				fault = seen.fault ?? faultOf(seen.answer, reply.errorMessage);
-			}
+			if (errored && !signal.aborted) fault = faultFrom(reply.errorMessage);
 			status = signal.aborted
 				? "stopped"
 				: fault
@@ -509,9 +512,7 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 						: "completed";
 			if (status === "failed") console.error("A turn failed:", reply.errorMessage);
 		} catch (error) {
-			if (!signal.aborted && !("included" in grant)) {
-				fault = seen.fault ?? faultOf(seen.answer, String(error));
-			}
+			if (!signal.aborted) fault = faultFrom(String(error));
 			status = signal.aborted ? "stopped" : fault ? "interrupted" : "failed";
 			if (status === "failed") console.error("A turn failed:", error);
 		}
