@@ -35,7 +35,10 @@ export async function replyToNextOpenCodeTurn(reply: OpenCodeReply): Promise<voi
 	if (!response.ok) throw new Error(`Queuing an OpenCode reply failed: ${response.status}`);
 }
 
-/** Completes the held turn that named `key`, as if OpenCode finished its reply. */
+/**
+ * Finishes every held turn that named `key`, as if OpenCode completed its reply, or hit its
+ * limit when the reply was limited.
+ */
 export async function releaseOpenCodeTurn(key: string): Promise<void> {
 	const response = await control("release", { method: "POST", body: JSON.stringify({ key }) });
 	if (!response.ok) throw new Error(`Releasing an OpenCode turn failed: ${response.status}`);
