@@ -45,3 +45,14 @@ export async function chooseDefaultPair(pair: Pair) {
 	}).catch(() => null);
 	return refusal(response);
 }
+
+/** Probes the connection once. Settles once Ditto has its new state; reread it to see it. */
+export async function checkConnection(connectionId: string): Promise<void> {
+	await fetch(`/api/models/${connectionId}/check`, { method: "POST" }).catch(() => null);
+}
+
+/** The account's model access as it is now, read from the browser; null when unreachable. */
+export async function readModelAccess(): Promise<ModelAccessView | null> {
+	const response = await fetch("/api/models").catch(() => null);
+	return response?.ok ? ((await response.json()) as ModelAccessView) : null;
+}

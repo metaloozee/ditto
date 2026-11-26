@@ -609,12 +609,16 @@ export interface ModelAccessSectionProps {
 	opencodeModels: readonly string[];
 	defaultPair: Pair | undefined;
 	onDefaultPairChange: (pair: Pair) => void;
-	/** Answers why the key wasn't stored, shown beside the field, or nothing once it is. */
+	/**
+	 * Answers why the key wasn't stored, shown beside the field, or nothing once it is. Also
+	 * replaces an OpenCode key that needs reconnecting.
+	 */
 	onConnectKey: (key: string, model: string) => Promise<string | void> | void;
 	onConnectChatGPT: () => void;
 	/** Without it no connection offers Disconnect. */
 	onDisconnect?: (connectionId: string) => void;
 	onCheck: (connectionId: string) => Promise<void> | void;
+	/** Reconnects a connection other than an OpenCode key, which reopens the key form instead. */
 	onReconnect: (connectionId: string) => void;
 	/** For `/design`: open with the key form or the disconnect confirmation showing. */
 	initialConnecting?: boolean;
@@ -649,7 +653,11 @@ export function ModelAccessSection({
 		connection,
 		onDisconnect: onDisconnect && (() => setDisconnecting(connection.id)),
 		onCheck: () => onCheck(connection.id),
-		onReconnect: () => onReconnect(connection.id),
+		// A refused key is replaced in the same form that connected it.
+		onReconnect:
+			connection.provider === "opencode"
+				? () => setConnecting(true)
+				: () => onReconnect(connection.id),
 	});
 
 	return (
@@ -713,7 +721,7 @@ export function ModelAccessSection({
 						detail="Not offered on this deployment."
 					/>
 				)}
-				{!opencode && (
+				{(!opencode || (connecting && opencode.state === "ReconnectNeeded")) && (
 					<ConnectKeyPanel
 						open={connecting}
 						onOpenChange={setConnecting}
@@ -1118,9 +1126,9 @@ export function InterruptionCard({
 	onCheck?: () => Promise<void> | void;
 }) {
 	const narrow = useIsMobile();
-	const [settled, setSettled] = useState<Pair | undefined>(
-		interruption === "Settled" ? (settledPair ?? turnPair) : undefined,
-	);
+	const [resumedOn, setResumedOn] = useState<Pair>();
+	// Settled by a Resume here, or by the turn carrying on by itself once its connection recovered.
+	const settled = resumedOn ?? (interruption === "Settled" ? (settledPair ?? turnPair) : undefined);
 	const [checking, setChecking] = useState(false);
 	const connection = access.connections.find((each) => each.id === turnPair.connectionId);
 	const current: Interruption = settled ? "Settled" : interruption;
@@ -1130,7 +1138,7 @@ export function InterruptionCard({
 
 	return (
 		<ConversationBubble className="w-full max-w-md">
-			<Card className="w-full">
+			<Card className="w-full" role="group" aria-label={pairLabel(access, turnPair)}>
 				<CardPanel className="gap-0 py-0">
 					<Morph id={current}>
 						{settled ? (
@@ -1166,7 +1174,7 @@ export function InterruptionCard({
 															title={`Resume on ${pairLabel(access, action.pair)}`}
 															className="max-w-full shrink"
 															onClick={() => {
-																setSettled(action.pair);
+																setResumedOn(action.pair);
 																onResume?.(action.pair);
 															}}
 														>
