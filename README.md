@@ -42,6 +42,8 @@ pnpm exec vp run verify
 
 Verification runs `vp check` (Oxfmt, Oxlint, and type checks), `vp test run` (Vitest), and the web app’s `vp build`. Use `vp fmt` to format, `vp lint` for lint diagnostics, and `vp run preview` to serve the built app. The pre-commit hook runs `vp staged` on staged JavaScript and TypeScript files.
 
+The full suite takes about 10 minutes. While working on one change, run only the tests it touches, for example `pnpm exec vp test run --project workspace apps/web/tests/workspace/open.test.ts`. The projects are `web`, `auth`, `workspace` and `feasibility`; `AGENTS.md` says when each one is needed.
+
 ## Cloudflare infrastructure
 
 `alchemy.run.ts` defines one Worker per stage. Alchemy appends the selected stage to `ditto-app-`, producing names such as `ditto-app-dev`, `ditto-app-staging`, and `ditto-app-prod`. Its entry point in `apps/web/src/worker.ts` serves the TanStack Start app and exports the Workspace, Bot and Credentials Durable Objects. The Workspace object is backed by a Cloudflare Container.
