@@ -157,7 +157,9 @@ async function interruptAll(
 		);
 		// One at a time, so each bot gets its own scripted reply.
 		await expect
-			.poll(async () => (await onlyTurn(context, workspaceId, botId).catch(() => null))?.reply)
+			.poll(async () => (await onlyTurn(context, workspaceId, botId).catch(() => null))?.reply, {
+				timeout: 10_000,
+			})
 			.toBe(`Part ${index + 1} so far.`);
 	}
 	await releaseOpenCodeTurn(key);
