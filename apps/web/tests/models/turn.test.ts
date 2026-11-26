@@ -135,7 +135,8 @@ describe("each API Pi catalogues an OpenCode model under", () => {
 describe("without a usable connection", () => {
 	it("disables the composer, refuses a direct request and never reaches the upstream", async () => {
 		const { page, context, workspaceId, botId } = await owner(PHONE);
-		const before = (await openCodeRequests()).length;
+		// No key exists yet, so only this test's own words could mark a request it caused.
+		const message = `Anyone there? ${crypto.randomUUID()}`;
 
 		await open(page, "/");
 		await expect(composer(page).getAttribute("placeholder")).resolves.toBe(
@@ -144,11 +145,11 @@ describe("without a usable connection", () => {
 		await expect(composer(page).isDisabled()).resolves.toBe(true);
 		await expect(page.getByRole("button", { name: "Send" }).isDisabled()).resolves.toBe(true);
 
-		const refused = await post(context, workspaceId, botId, "Anyone there?");
+		const refused = await post(context, workspaceId, botId, message);
 		expect(refused.status).toBe(409);
 		expect(JSON.parse(refused.body)).toEqual({ error: "Connect a model in Settings first" });
 		await expect(botStored(context, workspaceId, botId)).resolves.toEqual({});
-		expect((await openCodeRequests()).length).toBe(before);
+		await expect(openCodeAsked()).resolves.not.toContain(message);
 
 		// Once a key is connected, the same phone gets a working composer.
 		await connectKey(context);

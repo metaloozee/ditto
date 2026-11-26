@@ -64,9 +64,11 @@ export async function openCodeApis(key: string): Promise<OpenCodeApi[]> {
 	return (await requests()).filter((request) => request.key === key).map(({ api }) => api);
 }
 
-/** What each request naming `key` asked, in order: the last thing the user said. */
-export async function openCodeAsked(key: string): Promise<(string | null)[]> {
-	return (await requests()).filter((request) => request.key === key).map(({ asked }) => asked);
+/** What each request naming `key`, or every one at all, asked in order: the user's last words. */
+export async function openCodeAsked(key?: string): Promise<(string | null)[]> {
+	return (await requests())
+		.filter((request) => key === undefined || request.key === key)
+		.map(({ asked }) => asked);
 }
 
 /** Makes every request naming `key` answer `fault`, until `clearOpenCodeFault`. */
