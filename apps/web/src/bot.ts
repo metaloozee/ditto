@@ -28,6 +28,7 @@ import type { AuthEnv } from "./lib/auth.ts";
 import { INCLUDED, type Pair } from "./lib/model-access.ts";
 import { openaiFetch } from "./lib/openai-upstream.ts";
 import { faultOf } from "./lib/provider-fault.ts";
+import { testStageOnly } from "./lib/test-stage.ts";
 
 type Granted = Exclude<Grant, { refused: unknown }>;
 type Ended = Exclude<TurnStatus, "running">;
@@ -231,10 +232,12 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 	}
 
 	async stored(): Promise<Record<string, unknown>> {
+		testStageOnly(this.env);
 		return Object.fromEntries(await this.ctx.storage.list());
 	}
 
 	evict(): void {
+		testStageOnly(this.env);
 		this.ctx.abort("evicted by the test stage");
 	}
 

@@ -20,6 +20,7 @@ import {
 } from "./lib/model-access.ts";
 import { openaiFetch } from "./lib/openai-upstream.ts";
 import { faultOf } from "./lib/provider-fault.ts";
+import { testStageOnly } from "./lib/test-stage.ts";
 
 const OPENCODE = "https://opencode.ai/inference/openai/v1";
 const OPENAI_RESPONSES = "https://api.openai.com/v1/responses";
@@ -283,6 +284,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	}
 
 	async deployAs(deployment: Deployment): Promise<void> {
+		testStageOnly(this.env);
 		await this.ctx.storage.put("test:deployment", deployment);
 	}
 
@@ -382,6 +384,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	}
 
 	async offerIncluded(offered: boolean): Promise<void> {
+		testStageOnly(this.env);
 		await this.ctx.storage.put("test:includedOffered", offered);
 	}
 
@@ -720,6 +723,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	}
 
 	async evictAfterRotation(): Promise<void> {
+		testStageOnly(this.env);
 		await this.ctx.storage.put("test:evictAfterRotation", true);
 	}
 
@@ -733,6 +737,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	}
 
 	async stored(): Promise<Record<string, unknown>> {
+		testStageOnly(this.env);
 		return Object.fromEntries(await this.ctx.storage.list());
 	}
 
