@@ -1,9 +1,9 @@
-import type { BrowserContext, Page } from "playwright";
+import type { BrowserContext } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
 import { open } from "../auth/visitor.ts";
 import { failNextOpenCodeRequest, openCodeKey, openCodeRequests } from "./opencode.ts";
-import { owner } from "./owner.ts";
+import { composer, messages, modelAccess, owner, post, send } from "./owner.ts";
 import { failNextWorkersAiRequest, workersAiRequests } from "./workers-ai.ts";
 
 const DEEPSEEK = "@cf/deepseek-ai/deepseek-v4.1-flash-1017";
@@ -36,24 +36,6 @@ async function turns(context: BrowserContext, workspaceId: string, botId: string
 	return Object.entries(stored).flatMap(([name, value]) =>
 		name.startsWith("turn:") ? [value] : [],
 	);
-}
-
-/** Sends `message` straight to the bot and answers the whole response, its SSE included. */
-async function post(context: BrowserContext, workspaceId: string, botId: string, message: string) {
-	const response = await context.request.post(
-		`/api/workspaces/${workspaceId}/bots/${botId}/turns`,
-		{ data: { message } },
-	);
-	return { status: response.status(), body: await response.text() };
-}
-
-const composer = (page: Page) => page.getByRole("textbox", { name: "Message Ditto" });
-const messages = (page: Page) => page.getByLabel("Messages", { exact: true });
-const modelAccess = (page: Page) => page.getByRole("region", { name: "Model access" });
-
-async function send(page: Page, text: string) {
-	await composer(page).fill(text);
-	await page.getByRole("button", { name: "Send" }).click();
 }
 
 const ISO_TIME = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;

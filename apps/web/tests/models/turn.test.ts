@@ -1,52 +1,20 @@
 import { readFile } from "node:fs/promises";
 
-import type { BrowserContext, Page } from "playwright";
 import { describe, expect, inject, it } from "vite-plus/test";
 
 import { newVisitor, open } from "../auth/visitor.ts";
+import { openCodeRequests, openCodeTurnHungUp, replyToNextOpenCodeTurn } from "./opencode.ts";
 import {
-	openCodeKey,
-	openCodeRequests,
-	openCodeTurnHungUp,
-	replyToNextOpenCodeTurn,
-} from "./opencode.ts";
-import { owner } from "./owner.ts";
-
-const PHONE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
-
-/** Connects a fresh OpenCode key on `model`, which becomes the default pair. */
-async function connectKey(context: BrowserContext, model = "gpt-5.4-mini") {
-	const key = await openCodeKey();
-	const connected = await context.request.post("/api/models/opencode", { data: { key, model } });
-	expect(connected.status()).toBe(204);
-	return key;
-}
-
-const botPath = (workspaceId: string, botId: string) =>
-	`/api/workspaces/${workspaceId}/bots/${botId}`;
-
-/** Sends `message` straight to the bot, as a script would, and answers the whole response. */
-async function post(context: BrowserContext, workspaceId: string, botId: string, message: string) {
-	const response = await context.request.post(`${botPath(workspaceId, botId)}/turns`, {
-		data: { message },
-	});
-	return { status: response.status(), body: await response.text() };
-}
-
-async function botStored(context: BrowserContext, workspaceId: string, botId: string) {
-	const response = await context.request.get(`${botPath(workspaceId, botId)}/__test/stored`);
-	expect(response.status()).toBe(200);
-	return response.text();
-}
-
-const composer = (page: Page) => page.getByRole("textbox", { name: "Message Ditto" });
-const messages = (page: Page) => page.getByLabel("Messages", { exact: true });
-
-/** Types `text` into the composer and presses Send. */
-async function send(page: Page, text: string) {
-	await composer(page).fill(text);
-	await page.getByRole("button", { name: "Send" }).click();
-}
+	botPath,
+	botStored,
+	composer,
+	connectKey,
+	messages,
+	owner,
+	PHONE,
+	post,
+	send,
+} from "./owner.ts";
 
 const markerOf = (key: string) => key.slice("sk-oc-MARKER-".length);
 
@@ -85,7 +53,7 @@ describe("a turn on the default pair", () => {
 		expect(bodies.some((body) => body.includes('"type":"delta"'))).toBe(true);
 		for (const body of bodies) expect(body).not.toContain(markerOf(key));
 
-		const atRest = await botStored(context, workspaceId, botId);
+		const atRest = JSON.stringify(await botStored(context, workspaceId, botId));
 		const turns = Object.values(JSON.parse(atRest) as Record<string, unknown>);
 		expect(turns).toEqual(
 			expect.arrayContaining([
@@ -140,7 +108,7 @@ describe("without a usable connection", () => {
 		const refused = await post(context, workspaceId, botId, "Anyone there?");
 		expect(refused.status).toBe(409);
 		expect(JSON.parse(refused.body)).toEqual({ error: "Connect a model in Settings first" });
-		await expect(botStored(context, workspaceId, botId)).resolves.toBe("{}");
+		await expect(botStored(context, workspaceId, botId)).resolves.toEqual({});
 		expect((await openCodeRequests()).length).toBe(before);
 
 		// Once a key is connected, the same phone gets a working composer.
@@ -166,7 +134,7 @@ describe("stopping a turn", () => {
 		await messages(page).getByText("Stopped", { exact: true }).waitFor();
 		await page.getByRole("button", { name: "Send" }).waitFor();
 		await expect.poll(() => openCodeTurnHungUp(key), { timeout: 10_000 }).toBe(true);
-		const turns = Object.values(JSON.parse(await botStored(context, workspaceId, botId)) as object);
+		const turns = Object.values(await botStored(context, workspaceId, botId));
 		expect(turns).toEqual([
 			expect.objectContaining({ reply: "Reading the notes now.", status: "stopped" }),
 		]);
@@ -194,6 +162,6 @@ describe("another account", () => {
 		expect(signedOut.status).toBe(401);
 
 		await expect(openCodeRequests(aliceKey)).resolves.toHaveLength(1);
-		await expect(botStored(alice.context, alice.workspaceId, alice.botId)).resolves.toBe("{}");
+		await expect(botStored(alice.context, alice.workspaceId, alice.botId)).resolves.toEqual({});
 	});
 });

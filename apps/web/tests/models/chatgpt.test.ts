@@ -1,15 +1,13 @@
 import { readFile } from "node:fs/promises";
 
 import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
-import type { BrowserContext, Page } from "playwright";
+import type { BrowserContext } from "playwright";
 import { describe, expect, inject, it } from "vite-plus/test";
 
 import { CHATGPT_MODELS } from "../../src/lib/model-access.ts";
 import { newVisitor, open } from "../auth/visitor.ts";
 import { chatgptCredential, chatgptRequests, markerOf } from "./chatgpt.ts";
-import { owner } from "./owner.ts";
-
-const modelAccess = (page: Page) => page.getByRole("region", { name: "Model access" });
+import { botPath, modelAccess, owner, post, view } from "./owner.ts";
 
 /** Opens the owner's workspace and answers it with its Chief of Staff's ID. */
 async function openWorkspace(context: BrowserContext) {
@@ -25,23 +23,6 @@ async function openWorkspace(context: BrowserContext) {
 /** Imports `credential` as the local import command does: once, as the signed-in owner. */
 const importCredential = (context: BrowserContext, credential: unknown) =>
 	context.request.post("/api/models/chatgpt", { data: { credential } });
-
-async function view(context: BrowserContext) {
-	const response = await context.request.get("/api/models");
-	expect(response.status()).toBe(200);
-	return response.json() as Promise<unknown>;
-}
-
-const botPath = (workspaceId: string, botId: string) =>
-	`/api/workspaces/${workspaceId}/bots/${botId}`;
-
-/** Sends `message` straight to the bot and answers the whole response. */
-async function post(context: BrowserContext, workspaceId: string, botId: string, message: string) {
-	const response = await context.request.post(`${botPath(workspaceId, botId)}/turns`, {
-		data: { message },
-	});
-	return { status: response.status(), body: await response.text() };
-}
 
 describe("importing a ChatGPT plan credential", () => {
 	it("shows the plan as Connected in Settings, with its models in the pair select", async () => {

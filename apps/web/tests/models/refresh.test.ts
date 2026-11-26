@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import type { BrowserContext, Page } from "playwright";
+import type { BrowserContext } from "playwright";
 import { describe, expect, inject, it } from "vite-plus/test";
 
 import { open } from "../auth/visitor.ts";
@@ -8,15 +8,15 @@ import {
 	chatgptCredential,
 	chatgptRefreshes,
 	chatgptRequests,
-	endRefreshTrouble,
+	endRefreshFault,
 	markerOf,
 	planNextRefresh,
 	rejectAccessToken,
 	releaseRefresh,
 	revokeRefreshToken,
-	startRefreshTrouble,
+	startRefreshFault,
 } from "./chatgpt.ts";
-import { addSpecialist, owner } from "./owner.ts";
+import { addSpecialist, botPath, modelAccess, owner, post } from "./owner.ts";
 
 /** A signed-in owner with their Chief of Staff and one specialist. */
 async function ownerOfTwo() {
@@ -31,17 +31,6 @@ async function importExpired(context: BrowserContext) {
 	const imported = await context.request.post("/api/models/chatgpt", { data: { credential } });
 	expect(imported.status()).toBe(204);
 	return credential;
-}
-
-const botPath = (workspaceId: string, botId: string) =>
-	`/api/workspaces/${workspaceId}/bots/${botId}`;
-
-/** Sends `message` straight to the bot and answers the whole response. */
-async function post(context: BrowserContext, workspaceId: string, botId: string, message: string) {
-	const response = await context.request.post(`${botPath(workspaceId, botId)}/turns`, {
-		data: { message },
-	});
-	return { status: response.status(), body: await response.text() };
 }
 
 /** Sends `message` while the plan can't be used, which queues it, and answers its ID. */
@@ -63,8 +52,6 @@ async function chatgptState(context: BrowserContext) {
 }
 
 const rotationCount = (refresh: string) => chatgptRefreshes(refresh).then((all) => all.length);
-
-const modelAccess = (page: Page) => page.getByRole("region", { name: "Model access" });
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -191,7 +178,7 @@ describe("an expired ChatGPT plan token", () => {
 		async ({ status, state, label }) => {
 			const { page, context, workspaceId, bots } = await ownerOfTwo();
 			const credential = await importExpired(context);
-			await startRefreshTrouble({ status });
+			await startRefreshFault({ status });
 
 			const queued = await queue(context, workspaceId, bots[0]);
 			await expect(chatgptState(context)).resolves.toBe(state);
@@ -207,7 +194,7 @@ describe("an expired ChatGPT plan token", () => {
 			expect(during).toBeGreaterThanOrEqual(3);
 			expect(during).toBeLessThanOrEqual(6);
 
-			await endRefreshTrouble();
+			await endRefreshFault();
 			await expect
 				.poll(() => storedTurn(context, workspaceId, bots[0], queued), { timeout: 20_000 })
 				.toMatchObject({ status: "completed", reply: "pong" });

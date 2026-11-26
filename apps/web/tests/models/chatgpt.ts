@@ -5,7 +5,7 @@ import { inject } from "vite-plus/test";
 import type {
 	ChatGPTRefresh,
 	ChatGPTRefreshPlan,
-	ChatGPTRefreshTrouble,
+	ChatGPTRefreshFault,
 	ChatGPTRequest,
 } from "../auth/fake-upstream.ts";
 
@@ -73,13 +73,13 @@ export async function releaseRefresh(): Promise<void> {
 	if (!response.ok) throw new Error(`Nothing held to release: ${response.status}`);
 }
 
-/** Makes every refresh answer `trouble.status` until `endRefreshTrouble`. */
-export async function startRefreshTrouble(trouble: ChatGPTRefreshTrouble): Promise<void> {
-	await control("refresh-trouble", { method: "POST", body: JSON.stringify(trouble) });
+/** Makes every refresh answer `fault.status` until `endRefreshFault`. */
+export async function startRefreshFault(fault: ChatGPTRefreshFault): Promise<void> {
+	await control("refresh-fault", { method: "POST", body: JSON.stringify(fault) });
 }
 
-export async function endRefreshTrouble(): Promise<void> {
-	await control("refresh-trouble", { method: "DELETE" });
+export async function endRefreshFault(): Promise<void> {
+	await control("refresh-fault", { method: "DELETE" });
 }
 
 /** Makes simulated OpenAI refuse `refresh` from now on, as a revoked sign-in. */

@@ -6,9 +6,7 @@ import { describe, expect, inject, it } from "vite-plus/test";
 
 import { gitHubUser, newVisitor, open } from "../auth/visitor.ts";
 import { failNextOpenCodeRequest, openCodeKey, openCodeRequests } from "./opencode.ts";
-import { owner } from "./owner.ts";
-
-const modelAccess = (page: Page) => page.getByRole("region", { name: "Model access" });
+import { modelAccess, owner, stored, view } from "./owner.ts";
 
 /** Fills the connect form in Settings with `key` on `model` and presses Connect. */
 async function connectInSettings(page: Page, key: string, model: string) {
@@ -23,18 +21,6 @@ async function connectInSettings(page: Page, key: string, model: string) {
 
 const connect = (context: BrowserContext, key: string, model: string) =>
 	context.request.post("/api/models/opencode", { data: { key, model } });
-
-async function view(context: BrowserContext) {
-	const response = await context.request.get("/api/models");
-	expect(response.status()).toBe(200);
-	return response.json() as Promise<unknown>;
-}
-
-async function stored(context: BrowserContext) {
-	const response = await context.request.get("/api/models/__test/stored");
-	expect(response.status()).toBe(200);
-	return response.text();
-}
 
 /** What Settings shows of model access: the OpenCode row's state and the default pair. */
 async function shown(page: Page) {

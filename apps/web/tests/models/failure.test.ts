@@ -4,25 +4,13 @@ import { describe, expect, it } from "vite-plus/test";
 import { open } from "../auth/visitor.ts";
 import { chatgptCredential, chatgptRequests } from "./chatgpt.ts";
 import {
-	endOpenCodeOutage,
+	clearOpenCodeFault,
 	openCodeKey,
 	openCodeRequests,
 	revokeOpenCodeKey,
 	startOpenCodeOutage,
 } from "./opencode.ts";
-import { owner } from "./owner.ts";
-
-const PHONE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
-
-async function connectKey(context: BrowserContext, model = "gpt-5.4-mini") {
-	const key = await openCodeKey();
-	const connected = await context.request.post("/api/models/opencode", { data: { key, model } });
-	expect(connected.status()).toBe(204);
-	return key;
-}
-
-const botPath = (workspaceId: string, botId: string) =>
-	`/api/workspaces/${workspaceId}/bots/${botId}`;
+import { botPath, connectKey, messages, modelAccess, owner, PHONE, send } from "./owner.ts";
 
 /** The bot's turn records, as stored. */
 async function turns(context: BrowserContext, workspaceId: string, botId: string) {
@@ -42,15 +30,7 @@ async function connectionState(context: BrowserContext) {
 
 const requestCount = (key: string) => openCodeRequests(key).then((all) => all.length);
 
-const composer = (page: Page) => page.getByRole("textbox", { name: "Message Ditto" });
-const messages = (page: Page) => page.getByLabel("Messages", { exact: true });
-const modelAccess = (page: Page) => page.getByRole("region", { name: "Model access" });
 const card = (page: Page) => messages(page).getByRole("group", { name: "gpt-5.4-mini · OpenCode" });
-
-async function send(page: Page, text: string) {
-	await composer(page).fill(text);
-	await page.getByRole("button", { name: "Send" }).click();
-}
 
 const PAIR = { connectionId: "opencode", model: "gpt-5.4-mini" };
 const ON_PAIR = { key: expect.any(String), model: "gpt-5.4-mini" };
@@ -81,7 +61,7 @@ describe("a provider outage", () => {
 		expect(duringOutage).toBeGreaterThanOrEqual(3);
 		expect(duringOutage).toBeLessThanOrEqual(6);
 
-		await endOpenCodeOutage(key);
+		await clearOpenCodeFault(key);
 		await messages(page).getByText("pong").waitFor({ timeout: 20_000 });
 		await messages(page).getByText("Carried on with gpt-5.4-mini · OpenCode").waitFor();
 		expect(await turns(context, workspaceId, botId)).toEqual([
@@ -107,7 +87,7 @@ describe("a provider outage", () => {
 		expect(await checked.json()).toEqual({ state: "Unavailable" });
 		expect(await requestCount(key)).toBe(before + 1);
 
-		await endOpenCodeOutage(key);
+		await clearOpenCodeFault(key);
 		await open(page, "/settings");
 		const section = modelAccess(page);
 		await section.getByText("Unavailable", { exact: true }).waitFor();
@@ -172,7 +152,7 @@ describe("a revoked key", () => {
 });
 
 describe("a second connection", () => {
-	it("gets no request while the selected one is in trouble, until the owner selects it", async () => {
+	it("gets no request while the selected one has a fault, until the owner selects it", async () => {
 		const { context, workspaceId, botId } = await owner();
 		const key = await connectKey(context);
 		const credential = await chatgptCredential();
@@ -195,7 +175,7 @@ describe("a second connection", () => {
 			data: { connectionId: "chatgpt", model: "gpt-5.6-luna" },
 		});
 		expect(chosen.status()).toBe(204);
-		await endOpenCodeOutage(key);
+		await clearOpenCodeFault(key);
 
 		// The interrupted turn finishes on its own pair; only the queued one takes the new choice.
 		await expect

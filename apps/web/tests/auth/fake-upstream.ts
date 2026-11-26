@@ -32,11 +32,25 @@ export type GoogleIdentity = {
 
 export type GoogleAuthorization = GoogleIdentity | { cancel: true };
 
-/** A request OpenCode's Responses endpoint received, as the key and model it named. */
-export type OpenCodeRequest = { key: string | null; model: unknown };
+/**
+ * A request OpenCode's Responses endpoint received: the key and model it named, and what it
+ * asked, the last thing the user said in it.
+ */
+export type OpenCodeRequest = { key: string | null; model: unknown; asked: string | null };
 
-/** What OpenCode answers the next Responses request with, instead of serving it. */
-export type OpenCodeFault = { status: number; body?: unknown };
+/**
+ * What OpenCode answers a Responses request with instead of serving it: once, for the next
+ * request, or for every request naming a key until the test clears it. A `retryAfter` in
+ * seconds goes out as `retry-after`.
+ */
+export type OpenCodeFault = { status: number; body?: unknown; retryAfter?: number };
+
+/** What OpenCode says alongside a fault's status, unless the fault sets its own body. */
+const OPENCODE_ERRORS: Record<number, unknown> = {
+	401: { error: { type: "AuthError", message: "Invalid API key." } },
+	429: { error: { type: "rate_limit_exceeded", message: "Rate limit reached." } },
+	503: { error: { type: "server_error", message: "Service unavailable." } },
+};
 
 /**
  * How OpenCode streams its reply to the next turn: these text deltas in order, then the
@@ -46,9 +60,6 @@ export type OpenCodeFault = { status: number; body?: unknown };
  * Held and limited, it fails only when released, so several turns can be mid-reply at the limit.
  */
 export type OpenCodeReply = { deltas: string[]; hold?: boolean; limited?: boolean };
-
-/** A key's limit: every request naming it answers 429, with `retry-after` if set, in seconds. */
-export type OpenCodeLimit = { retryAfter?: number };
 
 /** The text of what a Responses request asked: the last thing the user said in it. */
 function askedText(input: unknown): string | null {
@@ -87,7 +98,7 @@ export type ChatGPTTokens = { access: string; refresh: string };
 export type ChatGPTRefreshPlan = { hold: true } | { lose: true; oldStillAccepted?: boolean };
 
 /** What every refresh meets until it ends: this status, with `retry-after` in seconds if set. */
-export type ChatGPTRefreshTrouble = { status: number; retryAfter?: number };
+export type ChatGPTRefreshFault = { status: number; retryAfter?: number };
 
 /** A refresh request simulated OpenAI received, and the pair it issued if it rotated. */
 export type ChatGPTRefresh = {
@@ -188,15 +199,12 @@ export async function startFakeUpstream() {
 	let failNextEmail = false;
 	const openCodeKeys = new Set<string>();
 	const openCodeFaults: OpenCodeFault[] = [];
+	// Keys whose every request meets a fault: a limit, an outage or a revoked key.
+	const openCodeKeyFaults = new Map<string, OpenCodeFault>();
 	const openCodeRequests: OpenCodeRequest[] = [];
 	const openCodeReplies: OpenCodeReply[] = [];
 	// Keys whose streamed turn the caller hung up on before it completed.
 	const openCodeHungUp: string[] = [];
-	const openCodeLimits = new Map<string, OpenCodeLimit>();
-	// Keys whose every request meets an outage: 503 until it ends.
-	const openCodeDown = new Set<string>();
-	// What each Responses request asked, beside the key it named.
-	const openCodeAsked: { key: string | null; text: string | null }[] = [];
 	// Held turns by key, each finishing its stream when released.
 	const openCodeHeld = new Map<string, (() => void)[]>();
 	const workersAi = fakeWorkersAi();
@@ -205,7 +213,7 @@ export async function startFakeUpstream() {
 	const chatgptRefreshes: ChatGPTRefresh[] = [];
 	const chatgptRefreshPlans: ChatGPTRefreshPlan[] = [];
 	const chatgptHeldRefreshes: (() => void)[] = [];
-	let chatgptRefreshTrouble: ChatGPTRefreshTrouble | null = null;
+	let chatgptRefreshFault: ChatGPTRefreshFault | null = null;
 
 	const server = createServer(async (req, res) => {
 		const url = new URL(req.url ?? "/", "http://fake");
@@ -295,24 +303,13 @@ export async function startFakeUpstream() {
 		}
 		if (url.pathname === "/__opencode/requests") return json(200, openCodeRequests);
 		if (url.pathname === "/__opencode/hung-up") return json(200, openCodeHungUp);
-		if (url.pathname === "/__opencode/asked") return json(200, openCodeAsked);
 		if (
-			url.pathname === "/__opencode/limit" &&
+			url.pathname === "/__opencode/fault" &&
 			(req.method === "POST" || req.method === "DELETE")
 		) {
-			const { key, ...limit } = JSON.parse(await body(req)) as { key: string } & OpenCodeLimit;
-			if (req.method === "POST") openCodeLimits.set(key, limit);
-			else openCodeLimits.delete(key);
-			return json(204, null);
-		}
-		if (url.pathname === "/__opencode/down" && (req.method === "POST" || req.method === "DELETE")) {
-			const { key } = JSON.parse(await body(req)) as { key: string };
-			if (req.method === "POST") openCodeDown.add(key);
-			else openCodeDown.delete(key);
-			return json(204, null);
-		}
-		if (req.method === "POST" && url.pathname === "/__opencode/revoke") {
-			openCodeKeys.delete((JSON.parse(await body(req)) as { key: string }).key);
+			const { key, ...fault } = JSON.parse(await body(req)) as { key: string } & OpenCodeFault;
+			if (req.method === "POST") openCodeKeyFaults.set(key, fault);
+			else openCodeKeyFaults.delete(key);
 			return json(204, null);
 		}
 		if (req.method === "POST" && url.pathname === "/__opencode/release") {
@@ -329,27 +326,19 @@ export async function startFakeUpstream() {
 				stream?: unknown;
 				input?: unknown;
 			};
-			openCodeRequests.push({ key, model });
-			openCodeAsked.push({ key, text: askedText(input) });
-			const fault = openCodeFaults.shift();
-			if (fault) return json(fault.status, fault.body ?? { error: { message: "Simulated" } });
-			if (key && openCodeDown.has(key)) {
-				return json(503, { error: { type: "server_error", message: "Service unavailable." } });
-			}
-			if (!key || !openCodeKeys.has(key)) {
-				return json(401, { error: { type: "AuthError", message: "Invalid API key." } });
-			}
-			const limit = openCodeLimits.get(key);
-			if (limit) {
-				res.writeHead(429, {
+			openCodeRequests.push({ key, model, asked: askedText(input) });
+			// A queued fault first, then the key's own; a key OpenCode never issued is refused.
+			const fault =
+				openCodeFaults.shift() ??
+				(key && openCodeKeys.has(key) ? openCodeKeyFaults.get(key) : { status: 401 });
+			if (fault || !key) {
+				const { status, body: answer, retryAfter } = fault ?? { status: 401 };
+				res.writeHead(status, {
 					"content-type": "application/json",
-					...(limit.retryAfter === undefined ? {} : { "retry-after": String(limit.retryAfter) }),
+					...(retryAfter === undefined ? {} : { "retry-after": String(retryAfter) }),
 				});
-				return res.end(
-					JSON.stringify({
-						error: { type: "rate_limit_exceeded", message: "Rate limit reached." },
-					}),
-				);
+				const error = answer ?? OPENCODE_ERRORS[status] ?? { error: { message: "Simulated" } };
+				return res.end(JSON.stringify(error));
 			}
 			if (stream === true) {
 				const reply = openCodeReplies.shift() ?? { deltas: ["pong"] };
@@ -361,7 +350,7 @@ export async function startFakeUpstream() {
 				for (const event of head) res.write(event);
 				const finish = reply.limited
 					? () => {
-							openCodeLimits.set(key, {});
+							openCodeKeyFaults.set(key, { status: 429 });
 							res.end(
 								sseEvent({
 									type: "response.failed",
@@ -411,9 +400,9 @@ export async function startFakeUpstream() {
 			for (const answer of held) answer();
 			return json(held.length ? 204 : 404, null);
 		}
-		if (url.pathname === "/__chatgpt/refresh-trouble") {
-			chatgptRefreshTrouble =
-				req.method === "POST" ? (JSON.parse(await body(req)) as ChatGPTRefreshTrouble) : null;
+		if (url.pathname === "/__chatgpt/refresh-fault") {
+			chatgptRefreshFault =
+				req.method === "POST" ? (JSON.parse(await body(req)) as ChatGPTRefreshFault) : null;
 			return json(204, null);
 		}
 		if (req.method === "POST" && url.pathname === "/__chatgpt/revoke") {
@@ -438,8 +427,8 @@ export async function startFakeUpstream() {
 				resource: form.get("resource"),
 			};
 			chatgptRefreshes.push(refresh);
-			if (chatgptRefreshTrouble) {
-				const { status, retryAfter } = chatgptRefreshTrouble;
+			if (chatgptRefreshFault) {
+				const { status, retryAfter } = chatgptRefreshFault;
 				res.writeHead(status, {
 					"content-type": "application/json",
 					...(retryAfter === undefined ? {} : { "retry-after": String(retryAfter) }),

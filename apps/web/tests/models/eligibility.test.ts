@@ -6,14 +6,12 @@ import {
 	chatgptCredential,
 	chatgptRefreshes,
 	chatgptRequests,
-	endRefreshTrouble,
-	startRefreshTrouble,
+	endRefreshFault,
+	startRefreshFault,
 } from "./chatgpt.ts";
 import { openCodeKey, openCodeRequests } from "./opencode.ts";
-import { owner } from "./owner.ts";
+import { modelAccess, owner, post } from "./owner.ts";
 import { workersAiRequests } from "./workers-ai.ts";
-
-const modelAccess = (page: Page) => page.getByRole("region", { name: "Model access" });
 
 interface Deployment {
 	mode: "self-deployed" | "hosted";
@@ -36,15 +34,6 @@ async function connections(context: BrowserContext) {
 	const response = await context.request.get("/api/models");
 	expect(response.status()).toBe(200);
 	return ((await response.json()) as { connections: unknown[] }).connections;
-}
-
-/** Sends `message` straight to the bot and answers the whole response. */
-async function turn(context: BrowserContext, workspaceId: string, botId: string, message: string) {
-	const response = await context.request.post(
-		`/api/workspaces/${workspaceId}/bots/${botId}/turns`,
-		{ data: { message } },
-	);
-	return { status: response.status(), body: await response.text() };
 }
 
 /** Waits for Settings' ChatGPT plan row to say the plan isn't offered, with nothing to press. */
@@ -80,7 +69,7 @@ describe("a self-deployed Ditto", () => {
 		await expectOffered(page);
 		const credential = await chatgptCredential();
 		expect((await importCredential(context, credential)).status()).toBe(204);
-		expect((await turn(context, workspaceId, botId, "Hello")).status).toBe(200);
+		expect((await post(context, workspaceId, botId, "Hello")).status).toBe(200);
 		await expect(chatgptRequests(credential.access)).resolves.toHaveLength(1);
 	});
 });
@@ -92,7 +81,7 @@ describe("a hosted Ditto", () => {
 		await deployAs(context, { mode: "self-deployed", license: LICENSE });
 		const credential = await chatgptCredential();
 		expect((await importCredential(context, credential)).status()).toBe(204);
-		expect((await turn(context, workspaceId, botId, "Hello")).status).toBe(200);
+		expect((await post(context, workspaceId, botId, "Hello")).status).toBe(200);
 		await expect(chatgptRequests(credential.access)).resolves.toHaveLength(1);
 		expect((await context.request.delete("/api/models/chatgpt")).status()).toBe(204);
 
@@ -110,7 +99,7 @@ describe("a hosted Ditto", () => {
 		await expectOffered(page);
 		const credential = await chatgptCredential();
 		expect((await importCredential(context, credential)).status()).toBe(204);
-		expect((await turn(context, workspaceId, botId, "Hello")).status).toBe(200);
+		expect((await post(context, workspaceId, botId, "Hello")).status).toBe(200);
 		await expect(chatgptRequests(credential.access)).resolves.toHaveLength(1);
 	});
 });
@@ -123,7 +112,7 @@ describe("a gate that closes", () => {
 		expect((await importCredential(context, credential)).status()).toBe(204);
 
 		await deployAs(context, { mode: "hosted", license: LICENSE });
-		const refused = await turn(context, workspaceId, botId, "Hello");
+		const refused = await post(context, workspaceId, botId, "Hello");
 		expect(refused.status).toBe(409);
 		expect(JSON.parse(refused.body)).toEqual({ error: "Connect a model in Settings first" });
 		await expect(chatgptRequests(credential.access)).resolves.toEqual([]);
@@ -134,10 +123,10 @@ describe("a gate that closes", () => {
 		await deployAs(context, { mode: "self-deployed", license: LICENSE });
 		const credential = await chatgptCredential({ expired: true });
 		expect((await importCredential(context, credential)).status()).toBe(204);
-		await startRefreshTrouble({ status: 503 });
+		await startRefreshFault({ status: 503 });
 		try {
 			// The rotation meets an outage, so the plan is probed with backoff.
-			expect((await turn(context, workspaceId, botId, "Hello")).status).toBe(202);
+			expect((await post(context, workspaceId, botId, "Hello")).status).toBe(202);
 
 			await deployAs(context, { mode: "hosted", license: LICENSE });
 			await expectNotOffered(page);
@@ -146,7 +135,7 @@ describe("a gate that closes", () => {
 			await new Promise((resolve) => setTimeout(resolve, 3000));
 			await expect(chatgptRefreshes(credential.refresh)).resolves.toHaveLength(rotations);
 		} finally {
-			await endRefreshTrouble();
+			await endRefreshFault();
 		}
 	});
 });
@@ -161,17 +150,14 @@ describe("other model access", () => {
 			data: { key, model: "gpt-5.4-mini" },
 		});
 		expect(connected.status()).toBe(204);
-		expect((await turn(context, workspaceId, botId, "Hello")).status).toBe(200);
+		expect((await post(context, workspaceId, botId, "Hello")).status).toBe(200);
 		// The connect check, then the turn.
 		await expect(openCodeRequests(key)).resolves.toHaveLength(2);
 	});
 
 	it("keeps the included model running a turn with the ChatGPT gates closed, in both modes", async () => {
 		for (const mode of ["self-deployed", "hosted"] as const) {
-			const { context, workspaceId, botId } = await owner();
-			const session = (await (await context.request.get("/api/auth/get-session")).json()) as {
-				user: { id: string };
-			};
+			const { context, accountId, workspaceId, botId } = await owner();
 			await deployAs(context, { mode });
 			const offered = await context.request.put("/api/models/__test/included", {
 				data: { offered: true },
@@ -182,11 +168,11 @@ describe("other model access", () => {
 			});
 			expect(chosen.status()).toBe(204);
 
-			const sent = await turn(context, workspaceId, botId, "What time is it?");
+			const sent = await post(context, workspaceId, botId, "What time is it?");
 			expect(sent.status).toBe(200);
 			expect(sent.body).toContain('"status":"completed"');
 			// The tool call, then the answer with its result.
-			await expect(workersAiRequests(session.user.id)).resolves.toHaveLength(2);
+			await expect(workersAiRequests(accountId)).resolves.toHaveLength(2);
 		}
 	});
 });

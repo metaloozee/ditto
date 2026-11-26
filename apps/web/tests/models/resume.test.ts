@@ -1,36 +1,31 @@
 import { randomUUID } from "node:crypto";
 
-import type { BrowserContext, Page } from "playwright";
+import type { BrowserContext } from "playwright";
 import { describe, expect, inject, it } from "vite-plus/test";
 
 import type { Turn } from "../../src/bot-rpc.ts";
 import type { Pair } from "../../src/lib/model-access.ts";
 import { newVisitor, open } from "../auth/visitor.ts";
 import {
-	liftOpenCodeLimit,
+	clearOpenCodeFault,
 	openCodeAsked,
-	openCodeKey,
 	openCodeRequests,
 	releaseOpenCodeTurn,
 	replyToNextOpenCodeTurn,
 } from "./opencode.ts";
-import { owner } from "./owner.ts";
-
-/** What a Credentials probe asks, and the key check on connect too. */
-const PROBE = "Reply with exactly one word: pong";
+import {
+	addSpecialist,
+	botPath,
+	botStored,
+	chooseDefault,
+	connectKey,
+	messages,
+	owner,
+	PROBE,
+} from "./owner.ts";
 
 const OPENCODE: Pair = { connectionId: "opencode", model: "gpt-5.4-mini" };
 const CHATGPT: Pair = { connectionId: "chatgpt", model: "gpt-5.5" };
-
-/** Connects a fresh OpenCode key on `OPENCODE`'s model, which becomes the default pair. */
-async function connectKey(context: BrowserContext) {
-	const key = await openCodeKey();
-	const connected = await context.request.post("/api/models/opencode", {
-		data: { key, model: OPENCODE.model },
-	});
-	expect(connected.status()).toBe(204);
-	return key;
-}
 
 /**
  * Imports a ChatGPT plan sign-in whose access token simulated OpenAI accepts, as a second
@@ -68,24 +63,6 @@ async function chatgptRequests(token: string) {
 	return all.filter((request) => request.token === token);
 }
 
-/** Adds a bot to the workspace's membership, standing in for specialist creation. */
-async function addSpecialist(context: BrowserContext, workspaceId: string) {
-	const id = `bot-${randomUUID()}`;
-	const added = await context.request.post(`/api/workspaces/${workspaceId}/__test/members`, {
-		data: { id, name: "Researcher" },
-	});
-	expect(added.status()).toBe(204);
-	return id;
-}
-
-const botPath = (workspaceId: string, botId: string) =>
-	`/api/workspaces/${workspaceId}/bots/${botId}`;
-
-async function chooseDefault(context: BrowserContext, pair: Pair) {
-	const chosen = await context.request.put("/api/models/default", { data: pair });
-	expect(chosen.status()).toBe(204);
-}
-
 /** Asks the bot to resume `turnId` on `pair`, as the card's Resume does, and answers the status. */
 async function resume(
 	context: BrowserContext,
@@ -99,12 +76,6 @@ async function resume(
 		{ data: { pair } },
 	);
 	return response.status();
-}
-
-async function botStored(context: BrowserContext, workspaceId: string, botId: string) {
-	const response = await context.request.get(`${botPath(workspaceId, botId)}/__test/stored`);
-	expect(response.status()).toBe(200);
-	return (await response.json()) as Record<string, unknown>;
 }
 
 /** The bot's only turn, as it stored it. */
@@ -210,7 +181,7 @@ describe("three bots interrupted at a limit", () => {
 		}
 		await replyToNextOpenCodeTurn({ deltas: [" Done."] });
 		await replyToNextOpenCodeTurn({ deltas: [" Done."] });
-		await liftOpenCodeLimit(key);
+		await clearOpenCodeFault(key);
 		for (const [index, each] of waiting.entries()) {
 			await expect
 				.poll(async () => (await onlyTurn(context, workspaceId, each)).status, { timeout: 20_000 })
@@ -259,8 +230,6 @@ describe("another account", () => {
 		await expect(chatgptRequests(token)).resolves.toEqual([]);
 	});
 });
-
-const messages = (page: Page) => page.getByLabel("Messages", { exact: true });
 
 describe("the interruption card", () => {
 	it("offers Resume only when the bot's pair differs from the turn's, then settles on the new pair", async () => {

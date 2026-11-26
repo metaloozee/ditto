@@ -1,47 +1,26 @@
-import type { BrowserContext, Page } from "playwright";
+import type { BrowserContext } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
 import { stateView } from "../../src/lib/model-access.ts";
 import { open } from "../auth/visitor.ts";
 import {
 	limitOpenCode,
-	liftOpenCodeLimit,
+	clearOpenCodeFault,
 	openCodeAsked,
-	openCodeKey,
 	openCodeRequests,
 	replyToNextOpenCodeTurn,
 } from "./opencode.ts";
-import { owner } from "./owner.ts";
-
-const PHONE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
-
-/** What a Credentials probe asks, and the key check on connect too. */
-const PROBE = "Reply with exactly one word: pong";
-
-/** Connects a fresh OpenCode key, which becomes the default pair. */
-async function connectKey(context: BrowserContext, model = "gpt-5.4-mini") {
-	const key = await openCodeKey();
-	const connected = await context.request.post("/api/models/opencode", { data: { key, model } });
-	expect(connected.status()).toBe(204);
-	return key;
-}
-
-const botPath = (workspaceId: string, botId: string) =>
-	`/api/workspaces/${workspaceId}/bots/${botId}`;
-
-/** Sends `message` straight to the bot, as a script would, and answers the whole response. */
-async function post(context: BrowserContext, workspaceId: string, botId: string, message: string) {
-	const response = await context.request.post(`${botPath(workspaceId, botId)}/turns`, {
-		data: { message },
-	});
-	return { status: response.status(), body: await response.text() };
-}
-
-async function botStored(context: BrowserContext, workspaceId: string, botId: string) {
-	const response = await context.request.get(`${botPath(workspaceId, botId)}/__test/stored`);
-	expect(response.status()).toBe(200);
-	return (await response.json()) as Record<string, unknown>;
-}
+import {
+	botPath,
+	botStored,
+	connectKey,
+	messages,
+	owner,
+	PHONE,
+	post,
+	PROBE,
+	send,
+} from "./owner.ts";
 
 /** The account's OpenCode connection, as `GET /api/models` answers it. */
 async function connection(context: BrowserContext) {
@@ -54,14 +33,6 @@ async function connection(context: BrowserContext) {
 /** The turns the bot stored, without its queue or its unfinished pointer. */
 const turnsIn = (stored: Record<string, unknown>) =>
 	Object.entries(stored).flatMap(([name, value]) => (name.startsWith("turn:") ? [value] : []));
-
-const composer = (page: Page) => page.getByRole("textbox", { name: "Message Ditto" });
-const messages = (page: Page) => page.getByLabel("Messages", { exact: true });
-
-async function send(page: Page, text: string) {
-	await composer(page).fill(text);
-	await page.getByRole("button", { name: "Send" }).click();
-}
 
 /** What a turn's requests asked, leaving out probes and the key check. */
 const turnsAsked = async (key: string) =>
@@ -116,7 +87,7 @@ describe("a limit mid-turn", () => {
 		await replyToNextOpenCodeTurn({ deltas: [" Then the third."] });
 		await replyToNextOpenCodeTurn({ deltas: ["Hiring is up by three."] });
 		await replyToNextOpenCodeTurn({ deltas: ["The budget holds."] });
-		await liftOpenCodeLimit(key);
+		await clearOpenCodeFault(key);
 
 		await messages(page)
 			.getByText("I got through the first two sections. Then the third.")
@@ -205,7 +176,7 @@ describe("an interrupted turn and its queue", () => {
 
 		await replyToNextOpenCodeTurn({ deltas: [" All done."] });
 		await replyToNextOpenCodeTurn({ deltas: ["Summary ready."] });
-		await liftOpenCodeLimit(key);
+		await clearOpenCodeFault(key);
 		await expect
 			.poll(
 				async () => {

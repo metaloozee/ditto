@@ -1,47 +1,19 @@
-import { randomUUID } from "node:crypto";
-
 import type { BrowserContext, Page } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
 import { newVisitor, open } from "../auth/visitor.ts";
+import { openCodeRequests, releaseOpenCodeTurn, replyToNextOpenCodeTurn } from "./opencode.ts";
 import {
-	openCodeKey,
-	openCodeRequests,
-	releaseOpenCodeTurn,
-	replyToNextOpenCodeTurn,
-} from "./opencode.ts";
-import { owner } from "./owner.ts";
-
-const PHONE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
-
-/** Connects a fresh OpenCode key on `model`, which becomes the default pair. */
-async function connectKey(context: BrowserContext, model = "gpt-5.4-mini") {
-	const key = await openCodeKey();
-	const connected = await context.request.post("/api/models/opencode", { data: { key, model } });
-	expect(connected.status()).toBe(204);
-	return key;
-}
-
-/** Adds a second bot to the workspace's membership, standing in for specialist creation. */
-async function addSpecialist(context: BrowserContext, workspaceId: string) {
-	const id = `bot-${randomUUID()}`;
-	const added = await context.request.post(`/api/workspaces/${workspaceId}/__test/members`, {
-		data: { id, name: "Researcher" },
-	});
-	expect(added.status()).toBe(204);
-	return id;
-}
-
-const botPath = (workspaceId: string, botId: string) =>
-	`/api/workspaces/${workspaceId}/bots/${botId}`;
-
-/** Sends `message` straight to the bot and answers the whole response. */
-async function post(context: BrowserContext, workspaceId: string, botId: string, message: string) {
-	const response = await context.request.post(`${botPath(workspaceId, botId)}/turns`, {
-		data: { message },
-	});
-	return { status: response.status(), body: await response.text() };
-}
+	addSpecialist,
+	botPath,
+	chooseDefault,
+	connectKey,
+	messages,
+	owner,
+	PHONE,
+	post,
+	send,
+} from "./owner.ts";
 
 async function setOverride(
 	context: BrowserContext,
@@ -60,20 +32,11 @@ async function override(context: BrowserContext, workspaceId: string, botId: str
 	return { status: response.status(), body: (await response.json()) as unknown };
 }
 
-async function chooseDefault(context: BrowserContext, model: string) {
-	const chosen = await context.request.put("/api/models/default", {
-		data: { connectionId: "opencode", model },
-	});
-	expect(chosen.status()).toBe(204);
-}
-
 /** The model each turn named at the upstream, after the connect check. */
 async function turnModels(key: string) {
 	return (await openCodeRequests(key)).slice(1).map((request) => request.model);
 }
 
-const composer = (page: Page) => page.getByRole("textbox", { name: "Message Ditto" });
-const messages = (page: Page) => page.getByLabel("Messages", { exact: true });
 const botSettings = (page: Page) => page.getByRole("dialog", { name: "Ditto’s settings" });
 
 /** The answer to the next save of a bot's own pair from bot settings. */
@@ -81,11 +44,6 @@ const savedOverride = (page: Page) =>
 	page.waitForResponse(
 		(response) => response.url().endsWith("/model") && response.request().method() === "PUT",
 	);
-
-async function send(page: Page, text: string) {
-	await composer(page).fill(text);
-	await page.getByRole("button", { name: "Send" }).click();
-}
 
 describe("a bot's pair", () => {
 	it("is the default without an override and its own with one, observed at the upstream", async () => {
@@ -100,7 +58,7 @@ describe("a bot's pair", () => {
 		await expect(turnModels(key)).resolves.toEqual(["gpt-5.4-mini", "gpt-5.5"]);
 
 		// A new default reaches only the bot that inherits it.
-		await chooseDefault(context, "gpt-5.4");
+		await chooseDefault(context, { connectionId: "opencode", model: "gpt-5.4" });
 		expect((await post(context, workspaceId, botId, "And tomorrow?")).status).toBe(200);
 		expect((await post(context, workspaceId, specialist, "More sources")).status).toBe(200);
 		await expect(turnModels(key)).resolves.toEqual([
@@ -129,7 +87,7 @@ describe("a bot's pair", () => {
 		const streaming = post(context, workspaceId, botId, "Draft the weekly update.");
 		await expect.poll(() => turnModels(key)).toEqual(["gpt-5.4-mini"]);
 		// Both the default and the bot's own pair change mid-turn.
-		await chooseDefault(context, "gpt-5.4");
+		await chooseDefault(context, { connectionId: "opencode", model: "gpt-5.4" });
 		expect(
 			await setOverride(context, workspaceId, botId, {
 				connectionId: "opencode",

@@ -2,30 +2,8 @@ import type { BrowserContext, Page } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
 import { clickSignOut, continueWithGitHub, newVisitor, open } from "../auth/visitor.ts";
-import { limitOpenCode, openCodeKey, openCodeRequests } from "./opencode.ts";
-import { owner } from "./owner.ts";
-
-const modelAccess = (page: Page) => page.getByRole("region", { name: "Model access" });
-
-/** Connects a fresh OpenCode key on `model`, which becomes the default pair. */
-async function connectKey(context: BrowserContext, model = "gpt-5.4-mini") {
-	const key = await openCodeKey();
-	const connected = await context.request.post("/api/models/opencode", { data: { key, model } });
-	expect(connected.status()).toBe(204);
-	return key;
-}
-
-async function view(context: BrowserContext) {
-	const response = await context.request.get("/api/models");
-	expect(response.status()).toBe(200);
-	return response.json() as Promise<unknown>;
-}
-
-async function stored(context: BrowserContext) {
-	const response = await context.request.get("/api/models/__test/stored");
-	expect(response.status()).toBe(200);
-	return response.text();
-}
+import { limitOpenCode, openCodeRequests } from "./opencode.ts";
+import { botStored, connectKey, modelAccess, owner, post, stored, view } from "./owner.ts";
 
 /** Presses Disconnect on the OpenCode row in Settings and confirms it. */
 async function disconnectInSettings(page: Page) {
@@ -37,15 +15,6 @@ async function disconnectInSettings(page: Page) {
 }
 
 const disconnect = (context: BrowserContext) => context.request.delete("/api/models/opencode");
-
-/** Sends `message` straight to the bot and answers the whole response. */
-async function turn(context: BrowserContext, workspaceId: string, botId: string, message: string) {
-	const response = await context.request.post(
-		`/api/workspaces/${workspaceId}/bots/${botId}/turns`,
-		{ data: { message } },
-	);
-	return { status: response.status(), body: await response.text() };
-}
 
 /** The providers the account signs in with. */
 async function methods(context: BrowserContext) {
@@ -98,12 +67,12 @@ describe("after a disconnect", () => {
 	it("refuses a turn without calling the upstream", async () => {
 		const { context, workspaceId, botId } = await owner();
 		const key = await connectKey(context);
-		expect((await turn(context, workspaceId, botId, "Before")).status).toBe(200);
+		expect((await post(context, workspaceId, botId, "Before")).status).toBe(200);
 		const before = await openCodeRequests(key);
 		expect(before).toHaveLength(2);
 
 		expect((await disconnect(context)).status()).toBe(204);
-		const refused = await turn(context, workspaceId, botId, "After");
+		const refused = await post(context, workspaceId, botId, "After");
 		expect(refused.status).toBe(409);
 		expect(JSON.parse(refused.body)).toEqual({ error: "Connect a model in Settings first" });
 		await expect(openCodeRequests(key)).resolves.toEqual(before);
@@ -113,21 +82,19 @@ describe("after a disconnect", () => {
 		const { context, workspaceId, botId } = await owner();
 		const key = await connectKey(context);
 		await limitOpenCode(key);
-		const interrupted = await turn(context, workspaceId, botId, "Draft the brief.");
+		const interrupted = await post(context, workspaceId, botId, "Draft the brief.");
 		expect(interrupted.body).toContain('"status":"interrupted"');
-		expect((await turn(context, workspaceId, botId, "Then the summary.")).status).toBe(202);
+		expect((await post(context, workspaceId, botId, "Then the summary.")).status).toBe(202);
 
 		expect((await disconnect(context)).status()).toBe(204);
 		const before = await openCodeRequests(key);
-		const refused = await turn(context, workspaceId, botId, "After");
+		const refused = await post(context, workspaceId, botId, "After");
 		expect(refused.status).toBe(409);
 		expect(JSON.parse(refused.body)).toEqual({ error: "Connect a model in Settings first" });
 
-		const path = `/api/workspaces/${workspaceId}/bots/${botId}/__test/stored`;
-		const botStored = async () =>
-			(await (await context.request.get(path)).json()) as Record<string, unknown>;
-		await expect.poll(async () => (await botStored()).unfinished).toBeUndefined();
-		expect(Object.values(await botStored())).toContainEqual(
+		const atBot = () => botStored(context, workspaceId, botId);
+		await expect.poll(async () => (await atBot()).unfinished).toBeUndefined();
+		expect(Object.values(await atBot())).toContainEqual(
 			expect.objectContaining({ message: "Draft the brief.", status: "interrupted" }),
 		);
 		// Nothing probes the forgotten key either.
@@ -145,7 +112,7 @@ describe("after a disconnect", () => {
 		const before = await openCodeRequests();
 
 		expect((await disconnect(context)).status()).toBe(204);
-		const refused = await turn(context, workspaceId, botId, "Still on my model?");
+		const refused = await post(context, workspaceId, botId, "Still on my model?");
 		expect(refused.status).toBe(409);
 		expect(JSON.parse(refused.body)).toEqual({ error: "Connect a model in Settings first" });
 		await expect(openCodeRequests()).resolves.toEqual(before);
@@ -180,7 +147,7 @@ describe("after a disconnect", () => {
 			connections: [{ id: "opencode", state: "Connected" }],
 			defaultPair: { connectionId: "opencode", model: "gpt-5.5" },
 		});
-		const { status, body } = await turn(context, workspaceId, botId, "Back again?");
+		const { status, body } = await post(context, workspaceId, botId, "Back again?");
 		expect(status).toBe(200);
 		expect(body).toContain('"status":"completed"');
 		await expect(openCodeRequests(key)).resolves.toEqual([
@@ -204,7 +171,7 @@ describe("another account", () => {
 		await expect(view(alice.context)).resolves.toMatchObject({
 			connections: [{ id: "opencode", state: "Connected" }],
 		});
-		const { status } = await turn(alice.context, alice.workspaceId, alice.botId, "Still here?");
+		const { status } = await post(alice.context, alice.workspaceId, alice.botId, "Still here?");
 		expect(status).toBe(200);
 		await expect(openCodeRequests(key)).resolves.toHaveLength(2);
 	});
