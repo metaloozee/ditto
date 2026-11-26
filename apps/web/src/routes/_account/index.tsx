@@ -108,7 +108,7 @@ function Home() {
 					name={workspace.chiefOfStaff.name}
 					role="Chief of Staff"
 					face={<DittoMark still />}
-					access={{ connections: access.connections }}
+					access={{ connections: access.connections, included: access.included }}
 					defaultPair={access.defaultPair ?? undefined}
 					override={override}
 					onOverrideChange={(pair) => void changeOverride(pair)}

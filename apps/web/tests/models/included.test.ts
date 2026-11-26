@@ -204,4 +204,25 @@ describe("a failure on one source", () => {
 		await expect(openCodeRequests(key)).resolves.toHaveLength(2);
 		await expect(workersAiRequests(accountId)).resolves.toHaveLength(1);
 	});
+
+	it("keeps a bot that overrides to the included model off the default key", async () => {
+		const { context, accountId, workspaceId, botId } = await owner();
+		await offerIncluded(context, true);
+		const key = await openCodeKey();
+		await context.request.post("/api/models/opencode", { data: { key, model: "gpt-5.4-mini" } });
+		const chosen = await context.request.put(`/api/workspaces/${workspaceId}/bots/${botId}/model`, {
+			data: { override: { connectionId: "included", model: "DeepSeek V4.1 Flash" } },
+		});
+		expect(chosen.status()).toBe(204);
+
+		const turn = await post(context, workspaceId, botId, "What time is it?");
+		expect(turn.body).toContain('"status":"completed"');
+		await expect(workersAiRequests(accountId)).resolves.toEqual(toolTurn(DEEPSEEK, accountId));
+
+		await offerIncluded(context, false);
+		const withdrawn = await post(context, workspaceId, botId, "And now?");
+		expect(withdrawn.status).toBe(409);
+		// Only the key check on connect: no turn ever reached the key.
+		await expect(openCodeRequests(key)).resolves.toHaveLength(1);
+	});
 });

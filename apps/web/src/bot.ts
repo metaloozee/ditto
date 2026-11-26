@@ -15,7 +15,7 @@ import type { BotRpc, Turn, TurnEvent, TurnRefusal, TurnStatus } from "./bot-rpc
 import type { CredentialsRpc, Grant } from "./credentials-rpc.ts";
 import type { Credentials } from "./credentials.ts";
 import type { AuthEnv } from "./lib/auth.ts";
-import type { Pair } from "./lib/model-access.ts";
+import { INCLUDED, type Pair } from "./lib/model-access.ts";
 
 type Granted = Exclude<Grant, { refused: unknown }>;
 
@@ -119,9 +119,13 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 			await this.ctx.storage.delete("override");
 			return true;
 		}
-		const { connections } = await this.#credentials(accountId).view();
+		const { connections, included } = await this.#credentials(accountId).view();
 		const connection = connections.find((each) => each.id === pair.connectionId);
-		if (!connection?.models.includes(pair.model)) return false;
+		const offered =
+			pair.connectionId === INCLUDED
+				? pair.model === included
+				: Boolean(connection?.models.includes(pair.model));
+		if (!offered) return false;
 		await this.ctx.storage.put("override", { connectionId: pair.connectionId, model: pair.model });
 		return true;
 	}
