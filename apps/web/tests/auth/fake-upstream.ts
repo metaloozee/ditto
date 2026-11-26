@@ -76,6 +76,24 @@ export type ChatGPTRequest = {
 /** A Sign in with ChatGPT token pair simulated OpenAI issued. */
 export type ChatGPTTokens = { access: string; refresh: string };
 
+/**
+ * What simulated OpenAI does with its next good refresh, beyond rotating the pair: a held one
+ * answers once released; a lost one drops the connection without an answer, and the old
+ * refresh token keeps working only if `oldStillAccepted`.
+ */
+export type ChatGPTRefreshPlan = { hold: true } | { lose: true; oldStillAccepted?: boolean };
+
+/** What every refresh meets until it ends: this status, with `retry-after` in seconds if set. */
+export type ChatGPTRefreshTrouble = { status: number; retryAfter?: number };
+
+/** A refresh request simulated OpenAI received, and the pair it issued if it rotated. */
+export type ChatGPTRefresh = {
+	presented: string | null;
+	clientId: string | null;
+	resource: string | null;
+	issued?: ChatGPTTokens;
+};
+
 /** Fields OpenAI's plan-usage docs say the Sign in with ChatGPT flow rejects. */
 const SIWC_UNSUPPORTED = ["temperature", "max_output_tokens", "previous_response_id", "prompt"];
 
@@ -180,6 +198,10 @@ export async function startFakeUpstream() {
 	const openCodeHeld = new Map<string, () => void>();
 	const chatgptTokens: ChatGPTTokens[] = [];
 	const chatgptRequests: ChatGPTRequest[] = [];
+	const chatgptRefreshes: ChatGPTRefresh[] = [];
+	const chatgptRefreshPlans: ChatGPTRefreshPlan[] = [];
+	const chatgptHeldRefreshes: (() => void)[] = [];
+	let chatgptRefreshTrouble: ChatGPTRefreshTrouble | null = null;
 
 	const server = createServer(async (req, res) => {
 		const url = new URL(req.url ?? "/", "http://fake");
@@ -373,6 +395,71 @@ export async function startFakeUpstream() {
 			return json(204, null);
 		}
 		if (url.pathname === "/__chatgpt/requests") return json(200, chatgptRequests);
+		if (url.pathname === "/__chatgpt/refreshes") return json(200, chatgptRefreshes);
+		if (req.method === "POST" && url.pathname === "/__chatgpt/refresh-next") {
+			chatgptRefreshPlans.push(JSON.parse(await body(req)) as ChatGPTRefreshPlan);
+			return json(204, null);
+		}
+		if (req.method === "POST" && url.pathname === "/__chatgpt/refresh-release") {
+			const held = chatgptHeldRefreshes.splice(0);
+			for (const answer of held) answer();
+			return json(held.length ? 204 : 404, null);
+		}
+		if (url.pathname === "/__chatgpt/refresh-trouble") {
+			chatgptRefreshTrouble =
+				req.method === "POST" ? (JSON.parse(await body(req)) as ChatGPTRefreshTrouble) : null;
+			return json(204, null);
+		}
+		if (req.method === "POST" && url.pathname === "/__chatgpt/revoke") {
+			const { refresh } = JSON.parse(await body(req)) as { refresh: string };
+			const index = chatgptTokens.findIndex((issued) => issued.refresh === refresh);
+			if (index !== -1) chatgptTokens.splice(index, 1);
+			return json(204, null);
+		}
+		// Each good refresh rotates the pair: the old access and refresh tokens stop working.
+		if (req.method === "POST" && url.pathname === "/auth.openai.com/api/accounts/oauth/token") {
+			const form = new URLSearchParams(await body(req));
+			const refresh: ChatGPTRefresh = {
+				presented: form.get("refresh_token"),
+				clientId: form.get("client_id"),
+				resource: form.get("resource"),
+			};
+			chatgptRefreshes.push(refresh);
+			if (chatgptRefreshTrouble) {
+				const { status, retryAfter } = chatgptRefreshTrouble;
+				res.writeHead(status, {
+					"content-type": "application/json",
+					...(retryAfter === undefined ? {} : { "retry-after": String(retryAfter) }),
+				});
+				return res.end(JSON.stringify({ error: { message: "Simulated" } }));
+			}
+			const index = chatgptTokens.findIndex((issued) => issued.refresh === refresh.presented);
+			if (
+				index === -1 ||
+				form.get("grant_type") !== "refresh_token" ||
+				!refresh.clientId ||
+				refresh.resource !== "https://api.openai.com/v1"
+			) {
+				return json(400, { error: "invalid_grant" });
+			}
+			const plan = chatgptRefreshPlans.shift();
+			const issued = { access: `at-MARKER-${randomUUID()}`, refresh: `rt-MARKER-${randomUUID()}` };
+			const keepOld = plan && "lose" in plan && plan.oldStillAccepted;
+			chatgptTokens.splice(index, keepOld ? 0 : 1, issued);
+			refresh.issued = issued;
+			if (plan && "lose" in plan) return void req.socket.destroy();
+			const answer = () =>
+				json(200, {
+					access_token: issued.access,
+					refresh_token: issued.refresh,
+					id_token: "simulated.id.token",
+					token_type: "Bearer",
+					expires_in: 3600,
+					scope: "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct",
+				});
+			if (plan && "hold" in plan) return void chatgptHeldRefreshes.push(answer);
+			return answer();
+		}
 		if (url.pathname.startsWith("/api.openai.com/")) {
 			const token = req.headers.authorization?.replace(/^Bearer /i, "") ?? null;
 			const parsed: unknown = JSON.parse((await body(req)) || "{}");

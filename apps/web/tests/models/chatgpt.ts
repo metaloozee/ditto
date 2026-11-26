@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import { inject } from "vite-plus/test";
 
-import type { ChatGPTRequest } from "../auth/fake-upstream.ts";
+import type {
+	ChatGPTRefresh,
+	ChatGPTRefreshPlan,
+	ChatGPTRefreshTrouble,
+	ChatGPTRequest,
+} from "../auth/fake-upstream.ts";
 
 const control = (path: string, init?: RequestInit) =>
 	fetch(`${inject("upstreamUrl")}/__chatgpt/${path}`, init);
@@ -21,7 +26,7 @@ export const SIWC_SCOPES = [
  * A fresh Sign in with ChatGPT credential, shaped as Pi saves one after a local sign-in, whose
  * access token simulated OpenAI accepts. Each token carries its own synthetic marker.
  */
-export async function chatgptCredential() {
+export async function chatgptCredential({ expired = false } = {}) {
 	const access = `at-MARKER-${randomUUID()}`;
 	const refresh = `rt-MARKER-${randomUUID()}`;
 	const response = await control("tokens", {
@@ -33,7 +38,7 @@ export async function chatgptCredential() {
 		type: "oauth",
 		access,
 		refresh,
-		expires: Date.now() + 3_600_000,
+		expires: expired ? Date.now() - 1000 : Date.now() + 3_600_000,
 		clientId: "oaiapp_TEST_client",
 		scopes: SIWC_SCOPES,
 	};
@@ -41,6 +46,46 @@ export async function chatgptCredential() {
 
 /** The marker part of a token, which must appear nowhere it shouldn't. */
 export const markerOf = (token: string) => token.slice("xx-MARKER-".length);
+
+/**
+ * Every refresh simulated OpenAI received for the sign-in that began with `refresh`, following
+ * its rotations, in order.
+ */
+export async function chatgptRefreshes(refresh: string): Promise<ChatGPTRefresh[]> {
+	const all = (await (await control("refreshes")).json()) as ChatGPTRefresh[];
+	const chain = new Set([refresh]);
+	return all.filter((each) => {
+		if (!each.presented || !chain.has(each.presented)) return false;
+		if (each.issued) chain.add(each.issued.refresh);
+		return true;
+	});
+}
+
+/** Plans what simulated OpenAI does with its next good refresh: hold it, or lose its answer. */
+export async function planNextRefresh(plan: ChatGPTRefreshPlan): Promise<void> {
+	const response = await control("refresh-next", { method: "POST", body: JSON.stringify(plan) });
+	if (!response.ok) throw new Error(`Planning a refresh failed: ${response.status}`);
+}
+
+/** Answers the held refreshes. */
+export async function releaseRefresh(): Promise<void> {
+	const response = await control("refresh-release", { method: "POST" });
+	if (!response.ok) throw new Error(`Nothing held to release: ${response.status}`);
+}
+
+/** Makes every refresh answer `trouble.status` until `endRefreshTrouble`. */
+export async function startRefreshTrouble(trouble: ChatGPTRefreshTrouble): Promise<void> {
+	await control("refresh-trouble", { method: "POST", body: JSON.stringify(trouble) });
+}
+
+export async function endRefreshTrouble(): Promise<void> {
+	await control("refresh-trouble", { method: "DELETE" });
+}
+
+/** Makes simulated OpenAI refuse `refresh` from now on, as a revoked sign-in. */
+export async function revokeRefreshToken(refresh: string): Promise<void> {
+	await control("revoke", { method: "POST", body: JSON.stringify({ refresh }) });
+}
 
 /** Every request simulated api.openai.com received that carried `token`, or every one at all. */
 export async function chatgptRequests(token?: string): Promise<ChatGPTRequest[]> {
