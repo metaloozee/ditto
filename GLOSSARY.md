@@ -41,6 +41,16 @@ The personal space where one owner works with Ditto and their team of bots on a 
 
 Ditto, the permanent bot in a workspace. The owner can ask it to assign work to a specialist and check the result against the request.
 
+**Face**
+
+A bot's mark and name, wherever the owner picks or opens that bot.
+_Avoid_: Avatar, icon
+
+**Bot panel**
+
+The panel beside the conversation that opens from a bot's face. It holds the bot's settings and the shared computer.
+_Avoid_: Right panel, right sidebar
+
 **Shared computer**
 
 The one computer a workspace's bots share, with one disk holding its files and logins. Each bot works on its own screen there.
