@@ -84,6 +84,10 @@ async function route(request: Request, accountId: string, rest: string): Promise
 	if (env.TEST_HOOKS === "on" && rest === "/__test/stored" && method === "GET") {
 		return Response.json(await credentials.stored());
 	}
+	if (env.TEST_HOOKS === "on" && rest === "/__test/evict-after-rotation" && method === "POST") {
+		await credentials.evictAfterRotation();
+		return new Response(null, { status: 204 });
+	}
 	return Response.json({ error: "No such route" }, { status: 404 });
 }
 

@@ -20,6 +20,12 @@ import { faultOf } from "./lib/provider-fault.ts";
 
 const OPENCODE = "https://opencode.ai/inference/openai/v1";
 const OPENAI_RESPONSES = "https://api.openai.com/v1/responses";
+const OPENAI_TOKEN = "https://auth.openai.com/api/accounts/oauth/token";
+/** The resource a Sign in with ChatGPT token is for, which a refresh names again. */
+const OPENAI_RESOURCE = "https://api.openai.com/v1";
+const PLAN_SCOPE = "chatgpt.tokens.use.direct";
+/** A rotated token counts as expired this long early, as Pi's own sign-in does. */
+const EXPIRY_MARGIN_MS = 3 * 60_000;
 
 /** An encrypted value: AES-GCM under the stage's key, bound to the account and provider. */
 interface Sealed {
@@ -69,12 +75,41 @@ function signIn(value: unknown): SignIn | undefined {
 		!clientId ||
 		!Array.isArray(scopes) ||
 		!scopes.every((scope) => typeof scope === "string") ||
-		!scopes.includes("chatgpt.tokens.use.direct")
+		!scopes.includes(PLAN_SCOPE)
 	) {
 		return undefined;
 	}
 	return { type, access, refresh, expires, clientId, scopes };
 }
+
+/** The sign-in a refresh answer rotates `previous` into, unless the answer isn't a whole one. */
+function rotated(answer: unknown, previous: SignIn): SignIn | undefined {
+	if (typeof answer !== "object" || answer === null) return undefined;
+	const { access_token, refresh_token, expires_in, scope } = answer as Record<string, unknown>;
+	if (
+		typeof access_token !== "string" ||
+		!access_token ||
+		typeof refresh_token !== "string" ||
+		!refresh_token ||
+		typeof expires_in !== "number" ||
+		!(expires_in > 0)
+	) {
+		return undefined;
+	}
+	const scopes = typeof scope === "string" ? scope.split(/\s+/).filter(Boolean) : previous.scopes;
+	if (!scopes.includes(PLAN_SCOPE)) return undefined;
+	return {
+		type: "oauth",
+		access: access_token,
+		refresh: refresh_token,
+		expires: Date.now() + expires_in * 1000 - EXPIRY_MARGIN_MS,
+		clientId: previous.clientId,
+		scopes,
+	};
+}
+
+/** A usable ChatGPT access token, or the fault that kept one from being had. */
+type Access = { access: string } | { fault: Fault };
 
 /**
  * A connection in trouble, stored as `trouble:<connectionId>` until a probe gets an answer.
@@ -105,6 +140,10 @@ const probed = (trouble: Trouble) => trouble.state !== "ReconnectNeeded";
 
 const faultIn = ({ state, resetsAt }: Trouble): Fault =>
 	resetsAt ? { state, resetsAt } : { state };
+
+/** A probe's outcome: "ok" once the provider answers, else the fault its answer names. */
+const answered = (answer: Response | "unreachable" | null): "ok" | Fault | null =>
+	answer !== "unreachable" && answer?.ok ? "ok" : faultOf(answer);
 
 const base64 = (bytes: ArrayBuffer | Uint8Array) =>
 	btoa(String.fromCharCode(...new Uint8Array(bytes)));
@@ -163,6 +202,11 @@ async function checkOpenCodeKey(
  * token leaves, in a grant to a Bot for one call, never in an answer to the owner.
  */
 export class Credentials extends DurableObject<AuthEnv> implements CredentialsRpc {
+	/** The ChatGPT access token being read or rotated, which every caller meanwhile shares. */
+	#chatgptAccess: Promise<Access | null> | null = null;
+	/** Set while a rotation is out with OpenAI, so the plan shows Refreshing. */
+	#rotating = false;
+
 	override fetch(): Response {
 		return Response.json({ object: "Credentials" });
 	}
@@ -188,10 +232,11 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 			});
 		}
 		if (chatgpt) {
+			const health = await troubled("chatgpt");
 			connections.push({
 				id: "chatgpt",
 				provider: "chatgpt",
-				...(await troubled("chatgpt")),
+				...(this.#rotating && health.state === "Connected" ? { state: "Refreshing" } : health),
 				models: CHATGPT_MODELS,
 			});
 		}
@@ -304,6 +349,16 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		pair: Pair,
 		fault?: Fault,
 	): Promise<Fault | null> {
+		return this.#troubled(accountId, botId, pair, fault);
+	}
+
+	/** Records `fault` on `pair`'s connection, and `botId` as waiting on it when one is given. */
+	async #troubled(
+		accountId: string,
+		botId: string | null,
+		pair: Pair,
+		fault?: Fault,
+	): Promise<Fault | null> {
 		const name = `trouble:${pair.connectionId}`;
 		const known = await this.ctx.storage.get<Trouble>(name);
 		if (!known && !fault) return null;
@@ -321,7 +376,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 			trouble.state = fault.state;
 			if (fault.resetsAt) trouble.resetsAt = fault.resetsAt;
 		}
-		if (!trouble.bots.includes(botId)) trouble.bots.push(botId);
+		if (botId && !trouble.bots.includes(botId)) trouble.bots.push(botId);
 		if (!known) trouble.probeAt = nextProbe(0, trouble.resetsAt);
 		await this.ctx.storage.put(name, trouble);
 		await this.#schedule();
@@ -359,13 +414,14 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		name: string,
 		trouble: Trouble,
 	): Promise<{ state: ConnectionState; woken?: Promise<void> }> {
-		const answer =
-			name === "trouble:chatgpt" ? await this.#probeChatGPT(trouble) : await this.#probe(trouble);
-		if (answer !== "unreachable" && answer?.ok) {
+		const fault =
+			name === "trouble:chatgpt"
+				? await this.#probeChatGPT(trouble)
+				: answered(await this.#probe(trouble));
+		if (fault === "ok") {
 			await this.ctx.storage.delete(name);
 			return { state: "Connected", woken: this.#wake(trouble) };
 		}
-		const fault = faultOf(answer);
 		if (fault && fault.state !== trouble.state) delete trouble.resetsAt;
 		if (fault) Object.assign(trouble, fault);
 		trouble.attempt += 1;
@@ -419,19 +475,17 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		return response;
 	}
 
-	/** The same probe on the ChatGPT plan, within the flow's rules: stored nowhere, streamed. */
-	async #probeChatGPT(trouble: Trouble): Promise<Response | "unreachable" | null> {
-		const chatgpt = await this.ctx.storage.get<StoredChatGPT>("connection:chatgpt");
-		if (!chatgpt) return null;
-		const opened = await open(
-			this.env.CREDENTIALS_ENCRYPTION_KEY,
-			chatgpt.signIn,
-			`${trouble.accountId}:chatgpt`,
-		);
-		const { access } = JSON.parse(opened) as SignIn;
+	/**
+	 * The same probe on the ChatGPT plan, within the flow's rules: stored nowhere, streamed. An
+	 * expired token is rotated first, so a failed rotation is retried by these probes too.
+	 */
+	async #probeChatGPT(trouble: Trouble): Promise<"ok" | Fault | null> {
+		const token = await this.#chatgptToken(trouble.accountId);
+		if (!token) return null;
+		if ("fault" in token) return token.fault;
 		const response = await openaiFetch(this.env.OAUTH_UPSTREAM)(OPENAI_RESPONSES, {
 			method: "POST",
-			headers: { authorization: `Bearer ${access}`, "content-type": "application/json" },
+			headers: { authorization: `Bearer ${token.access}`, "content-type": "application/json" },
 			body: JSON.stringify({
 				model: trouble.model,
 				input: [{ role: "user", content: "Reply with exactly one word: pong" }],
@@ -440,7 +494,76 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 			}),
 		}).catch(() => "unreachable" as const);
 		if (response !== "unreachable") await response.body?.cancel();
-		return response;
+		return answered(response);
+	}
+
+	/**
+	 * The ChatGPT access token, rotated first once it has expired. Callers meanwhile share the
+	 * one read or rotation in flight, and each starts by reading storage again, so no caller can
+	 * present a refresh token a rotation already spent. Null without a ChatGPT connection.
+	 */
+	#chatgptToken(accountId: string): Promise<Access | null> {
+		this.#chatgptAccess ??= this.#currentChatGPT(accountId).finally(() => {
+			this.#chatgptAccess = null;
+		});
+		return this.#chatgptAccess;
+	}
+
+	async #currentChatGPT(accountId: string): Promise<Access | null> {
+		const chatgpt = await this.ctx.storage.get<StoredChatGPT>("connection:chatgpt");
+		if (!chatgpt) return null;
+		const scope = `${accountId}:chatgpt`;
+		const signIn = JSON.parse(
+			await open(this.env.CREDENTIALS_ENCRYPTION_KEY, chatgpt.signIn, scope),
+		) as SignIn;
+		if (chatgpt.expires > Date.now()) return { access: signIn.access };
+
+		this.#rotating = true;
+		try {
+			const answer = await openaiFetch(this.env.OAUTH_UPSTREAM)(OPENAI_TOKEN, {
+				method: "POST",
+				headers: {
+					accept: "application/json",
+					"content-type": "application/x-www-form-urlencoded",
+				},
+				body: new URLSearchParams({
+					grant_type: "refresh_token",
+					client_id: signIn.clientId,
+					refresh_token: signIn.refresh,
+					resource: OPENAI_RESOURCE,
+				}),
+			}).catch(() => "unreachable" as const);
+			const next =
+				answer !== "unreachable" && answer.ok
+					? rotated(await answer.json().catch(() => null), signIn)
+					: undefined;
+			if (!next) {
+				if (answer !== "unreachable") await answer.body?.cancel().catch(() => {});
+				// A limit or an outage is retried; a refused or malformed rotation needs the owner.
+				return { fault: faultOf(answer) ?? { state: "ReconnectNeeded" } };
+			}
+			// The old refresh token is spent now, so the replacement is saved before anyone hears.
+			await this.ctx.storage.put("connection:chatgpt", {
+				...chatgpt,
+				signIn: await seal(this.env.CREDENTIALS_ENCRYPTION_KEY, JSON.stringify(next), scope),
+				expires: next.expires,
+			} satisfies StoredChatGPT);
+			// Durable, not just queued: an object reset now must not lose the only valid pair.
+			await this.ctx.storage.sync();
+			if (
+				this.env.TEST_HOOKS === "on" &&
+				(await this.ctx.storage.delete("test:evictAfterRotation"))
+			) {
+				this.ctx.abort("evicted by the test stage between a rotation and its answer");
+			}
+			return { access: next.access };
+		} finally {
+			this.#rotating = false;
+		}
+	}
+
+	async evictAfterRotation(): Promise<void> {
+		if (this.env.TEST_HOOKS === "on") await this.ctx.storage.put("test:evictAfterRotation", true);
 	}
 
 	/**
@@ -456,19 +579,22 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		return Object.fromEntries(await this.ctx.storage.list());
 	}
 
-	/** Hands out the access token alone: the refresh token never leaves this object. */
+	/**
+	 * Hands out the access token alone, rotated first if it expired: the refresh token never
+	 * leaves this object. A failed rotation puts the plan in trouble, as a failed turn would.
+	 */
 	async #grantChatGPT(accountId: string, wanted: Pair): Promise<Grant> {
 		const chatgpt = await this.ctx.storage.get<StoredChatGPT>("connection:chatgpt");
 		if (!chatgpt || !CHATGPT_MODELS.includes(wanted.model)) return { refused: "no-model" };
 		const granted = { connectionId: wanted.connectionId, model: wanted.model };
 		const trouble = await this.ctx.storage.get<Trouble>("trouble:chatgpt");
 		if (trouble) return { refused: "interrupted", pair: granted, fault: faultIn(trouble) };
-		const opened = await open(
-			this.env.CREDENTIALS_ENCRYPTION_KEY,
-			chatgpt.signIn,
-			`${accountId}:chatgpt`,
-		);
-		const { access } = JSON.parse(opened) as SignIn;
-		return { pair: granted, credential: { type: "api_key", key: access } };
+		const token = await this.#chatgptToken(accountId);
+		if (!token) return { refused: "no-model" };
+		if ("fault" in token) {
+			const fault = (await this.#troubled(accountId, null, granted, token.fault)) ?? token.fault;
+			return { refused: "interrupted", pair: granted, fault };
+		}
+		return { pair: granted, credential: { type: "api_key", key: token.access } };
 	}
 }

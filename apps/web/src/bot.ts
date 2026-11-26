@@ -63,7 +63,7 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		this.#running = running;
 		// The pair is resolved once, here: a change to it from now on reaches only the next turn.
 		const override = (await this.ctx.storage.get<Pair>("override")) ?? null;
-		const grant = await this.#credentials(accountId).grant(accountId, override);
+		const grant = await this.#grant(accountId, override);
 		if ("refused" in grant) {
 			this.#running = null;
 			if (grant.refused === "no-model") return { refused: "no-model" };
@@ -166,6 +166,18 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		return namespace.getByName(accountId);
 	}
 
+	/**
+	 * Asks Credentials for a grant, and once more on a fresh stub if the call broke: its object
+	 * may have been reset after saving a rotation, and the saved token answers the retry.
+	 */
+	async #grant(accountId: string, pair: Pair | null): Promise<Grant> {
+		try {
+			return await this.#credentials(accountId).grant(accountId, pair);
+		} catch {
+			return this.#credentials(accountId).grant(accountId, pair);
+		}
+	}
+
 	/** Whether earlier work still waits: an unfinished turn, or anything queued. */
 	async #waiting(): Promise<boolean> {
 		const stored = await this.ctx.storage.get<unknown>(["unfinished", "queue"]);
@@ -201,7 +213,7 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 
 			// An unfinished turn keeps its pair; a queued message takes the pair the bot uses now.
 			const pair = unfinished?.pair ?? (await this.ctx.storage.get<Pair>("override")) ?? null;
-			const grant = await credentials.grant(accountId, pair);
+			const grant = await this.#grant(accountId, pair);
 			if ("refused" in grant) {
 				// Still in trouble: Credentials wakes the bot again. Without a model, the work waits.
 				if (grant.refused === "interrupted") {
