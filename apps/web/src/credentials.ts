@@ -4,6 +4,7 @@ import type { Bot } from "./bot.ts";
 import type {
 	ConnectRefusal,
 	CredentialsRpc,
+	Deployment,
 	Fault,
 	Grant,
 	ModelAccessView,
@@ -198,9 +199,32 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		return { connections, defaultPair };
 	}
 
-	async importChatGPT(accountId: string, credential: unknown): Promise<boolean> {
+	async offersChatGPT(): Promise<boolean> {
+		const tested =
+			this.env.TEST_HOOKS === "on"
+				? await this.ctx.storage.get<Deployment>("test:deployment")
+				: undefined;
+		const { mode, license, approval } = tested ?? {
+			mode: this.env.DEPLOYMENT_MODE,
+			license: this.env.OPEN_SOURCE_LICENSE,
+			approval: this.env.OPENAI_HOSTED_APPROVAL,
+		};
+		// Any mode but self-deployed takes the hosted rule, which asks more.
+		return Boolean(license) && (mode === "self-deployed" || Boolean(approval));
+	}
+
+	async deployAs(deployment: Deployment): Promise<void> {
+		if (this.env.TEST_HOOKS !== "on") throw new Error("Test stage only");
+		await this.ctx.storage.put("test:deployment", deployment);
+	}
+
+	async importChatGPT(
+		accountId: string,
+		credential: unknown,
+	): Promise<"imported" | "malformed" | "not-offered"> {
+		if (!(await this.offersChatGPT())) return "not-offered";
 		const imported = signIn(credential);
-		if (!imported) return false;
+		if (!imported) return "malformed";
 		const connection: StoredChatGPT = {
 			provider: "chatgpt",
 			signIn: await seal(
@@ -225,7 +249,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 				model: CHATGPT_MODELS[0],
 			});
 		}
-		return true;
+		return "imported";
 	}
 
 	async connectOpenCode(
@@ -459,7 +483,10 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	/** Hands out the access token alone: the refresh token never leaves this object. */
 	async #grantChatGPT(accountId: string, wanted: Pair): Promise<Grant> {
 		const chatgpt = await this.ctx.storage.get<StoredChatGPT>("connection:chatgpt");
-		if (!chatgpt || !CHATGPT_MODELS.includes(wanted.model)) return { refused: "no-model" };
+		// A gate that closed after the import closes the plan too.
+		if (!chatgpt || !CHATGPT_MODELS.includes(wanted.model) || !(await this.offersChatGPT())) {
+			return { refused: "no-model" };
+		}
 		const granted = { connectionId: wanted.connectionId, model: wanted.model };
 		const trouble = await this.ctx.storage.get<Trouble>("trouble:chatgpt");
 		if (trouble) return { refused: "interrupted", pair: granted, fault: faultIn(trouble) };
