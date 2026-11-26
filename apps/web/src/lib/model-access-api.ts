@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
 
 import type { ModelAccessView } from "#/credentials-rpc.ts";
-import type { Pair } from "#/lib/model-access.ts";
+import type { ModelAccess, Pair } from "#/lib/model-access.ts";
 
 /** The signed-in account's model access, read on the server so Settings renders it at once. */
 export const getModelAccess = createServerFn({ method: "GET" }).handler(
@@ -52,4 +52,20 @@ export async function disconnectModel(connectionId: string) {
 		method: "DELETE",
 	}).catch(() => null);
 	return refusal(response);
+}
+
+/** The view as the components read it, with a limit's reset time back as a Date. */
+export function accessOf(view: ModelAccessView): ModelAccess {
+	return {
+		connections: view.connections.map(({ resetsAt, ...connection }) =>
+			resetsAt ? { ...connection, resetsAt: new Date(resetsAt) } : connection,
+		),
+		included: view.included,
+	};
+}
+
+/** Reads the account's model access again, for a page that follows it without reloading. */
+export async function readModelAccess(): Promise<ModelAccessView | null> {
+	const response = await fetch("/api/models", { cache: "no-store" }).catch(() => null);
+	return response?.ok ? ((await response.json()) as ModelAccessView) : null;
 }

@@ -15,6 +15,7 @@ import { toast } from "#/components/ui/toast.tsx";
 import { authClient, useSignOut } from "#/lib/auth-client.ts";
 import { resendAtFrom, sendLinkEmailCode } from "#/lib/email-code-client.ts";
 import {
+	accessOf,
 	chooseDefaultPair,
 	connectOpenCodeKey,
 	disconnectModel,
@@ -115,7 +116,7 @@ function Settings() {
 			onSignOut={() => void signOut()}
 			modelAccess={
 				<ModelAccessSection
-					access={{ connections: modelAccess.connections, included: modelAccess.included }}
+					access={accessOf(modelAccess)}
 					chatgptOffered={false}
 					opencodeModels={OPENCODE_MODELS}
 					defaultPair={modelAccess.defaultPair ?? undefined}
