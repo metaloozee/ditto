@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
-import { rm } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { TestProject } from "vite-plus/test/node";
@@ -10,6 +13,8 @@ declare module "vite-plus/test" {
 	export interface ProvidedContext {
 		appUrl: string;
 		upstreamUrl: string;
+		/** A file holding everything the stage has printed, its Worker's logs included. */
+		stageLog: string;
 	}
 }
 
@@ -27,6 +32,8 @@ export const COMPUTER_IDLE_SECONDS = 30;
 export const COMPUTER_LIFETIME_SECONDS = 75;
 /** The test stage's cookie key, so a test can check that no answer reveals it. */
 export const COOKIE_ENCRYPTION_KEY = "test-only-cookie-key-not-for-any-real-stage";
+/** The test stage's key for stored model connections. */
+export const CREDENTIALS_ENCRYPTION_KEY = "test-only-credentials-key-not-for-any-real-stage";
 
 async function waitForApp(exited: Promise<number | null>) {
 	const deadline = Date.now() + 180_000;
@@ -45,11 +52,13 @@ async function waitForApp(exited: Promise<number | null>) {
 async function startStage() {
 	const upstream = await startFakeUpstream();
 	await rm(`${repoRoot}.alchemy/state/ditto/test`, { recursive: true, force: true });
+	const stageLog = path.join(await mkdtemp(path.join(tmpdir(), "ditto-stage-")), "stage.log");
+	const log = createWriteStream(stageLog);
 
 	const child = spawn("pnpm", ["exec", "alchemy", "dev", "--stage", "test", "--no-input"], {
 		cwd: repoRoot,
 		detached: true,
-		stdio: ["ignore", "inherit", "inherit"],
+		stdio: ["ignore", "pipe", "pipe"],
 		env: {
 			...process.env,
 			CI: "true",
@@ -69,13 +78,25 @@ async function startStage() {
 			COMPUTER_IDLE_SECONDS: String(COMPUTER_IDLE_SECONDS),
 			COMPUTER_LIFETIME_SECONDS: String(COMPUTER_LIFETIME_SECONDS),
 			COOKIE_ENCRYPTION_KEY,
+			CREDENTIALS_ENCRYPTION_KEY,
+			OPENCODE_BASE_URL: `${upstream.url}/opencode.ai/inference/openai/v1`,
 		},
+	});
+	// Still shown as it was, and kept so a test can check what the Worker logged.
+	child.stdout.on("data", (chunk: Buffer) => {
+		process.stdout.write(chunk);
+		log.write(chunk);
+	});
+	child.stderr.on("data", (chunk: Buffer) => {
+		process.stderr.write(chunk);
+		log.write(chunk);
 	});
 	const exited = new Promise<number | null>((resolve) => child.once("exit", resolve));
 
 	const stop = async () => {
 		if (child.exitCode === null && child.pid) process.kill(-child.pid, "SIGTERM");
 		await upstream.close();
+		log.end();
 	};
 
 	try {
@@ -85,7 +106,7 @@ async function startStage() {
 		throw error;
 	}
 
-	return { upstreamUrl: upstream.url, stop };
+	return { upstreamUrl: upstream.url, stageLog, stop };
 }
 
 // Vitest runs this setup once per project that lists it, so the stage lives on
@@ -96,7 +117,7 @@ const shared = globalThis as {
 
 /**
  * Starts the test stage — the real Worker on a freshly migrated local D1 —
- * pointed at local GitHub, Google and Resend fakes with test credentials.
+ * pointed at local GitHub, Google, Resend and OpenCode fakes with test credentials.
  */
 export default async function setup(project: TestProject) {
 	const stage = (shared.dittoTestStage ??= { started: startStage(), users: 0 });
@@ -110,9 +131,10 @@ export default async function setup(project: TestProject) {
 	};
 
 	try {
-		const { upstreamUrl } = await stage.started;
+		const { upstreamUrl, stageLog } = await stage.started;
 		project.provide("appUrl", APP_URL);
 		project.provide("upstreamUrl", upstreamUrl);
+		project.provide("stageLog", stageLog);
 	} catch (error) {
 		await release();
 		throw error;

@@ -8,8 +8,8 @@ const ignorePatterns = [
 	".cursor/**",
 ];
 
-// One Worker and database serve every file of both projects: the setup starts the
-// stage once, and the group order keeps the two projects from running side by side.
+// One Worker and database serve every file of these projects: the setup starts the
+// stage once, and the group order keeps the projects from running side by side.
 const stageTests = (name: string, groupOrder: number) => ({
 	test: {
 		name,
@@ -55,7 +55,12 @@ export default defineConfig({
 			// Browser tests stay local: CI minutes are scarce.
 			...(process.env.CI
 				? []
-				: [stageTests("auth", 0), stageTests("workspace", 1), feasibilityTests]),
+				: [
+						stageTests("auth", 0),
+						stageTests("workspace", 1),
+						stageTests("models", 2),
+						feasibilityTests,
+					]),
 		],
 	},
 	staged: { "*.{js,ts,jsx,tsx}": "vp check --fix" },

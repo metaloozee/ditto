@@ -30,6 +30,12 @@ export type GoogleIdentity = {
 
 export type GoogleAuthorization = GoogleIdentity | { cancel: true };
 
+/** A request OpenCode's Responses endpoint received, as the key and model it named. */
+export type OpenCodeRequest = { key: string | null; model: unknown };
+
+/** What OpenCode answers the next Responses request with, instead of serving it. */
+export type OpenCodeFault = { status: number; body?: unknown };
+
 /** An unsigned ID token: Better Auth's Google code flow only decodes it. */
 const idToken = (claims: GoogleIdentity, audience: string) => {
 	const part = (data: unknown) => Buffer.from(JSON.stringify(data)).toString("base64url");
@@ -48,7 +54,7 @@ async function body(req: IncomingMessage) {
  * One local server standing in for every upstream the Worker talks to in the
  * test stage. The Worker reaches it as `${url}/<host>/<path>`; tests queue
  * what the next consent screen does with `POST /__github/next` or
- * `POST /__google/next`.
+ * `POST /__google/next`, and control OpenCode under `/__opencode/`.
  */
 export async function startFakeUpstream() {
 	const queue: GitHubAuthorization[] = [];
@@ -58,6 +64,9 @@ export async function startFakeUpstream() {
 	const googleCodes = new Map<string, { identity: GoogleIdentity; audience: string }>();
 	const emails: SentEmail[] = [];
 	let failNextEmail = false;
+	const openCodeKeys = new Set<string>();
+	const openCodeFaults: OpenCodeFault[] = [];
+	const openCodeRequests: OpenCodeRequest[] = [];
 
 	const server = createServer(async (req, res) => {
 		const url = new URL(req.url ?? "/", "http://fake");
@@ -130,6 +139,41 @@ export async function startFakeUpstream() {
 				200,
 				emails.filter((e) => e.to.includes(to ?? "")),
 			);
+		}
+
+		// OpenCode: tests issue keys, queue faults and read which key and model each request named.
+		if (req.method === "POST" && url.pathname === "/__opencode/keys") {
+			openCodeKeys.add((JSON.parse(await body(req)) as { key: string }).key);
+			return json(204, null);
+		}
+		if (req.method === "POST" && url.pathname === "/__opencode/fail-next") {
+			openCodeFaults.push(JSON.parse(await body(req)) as OpenCodeFault);
+			return json(204, null);
+		}
+		if (url.pathname === "/__opencode/requests") return json(200, openCodeRequests);
+		if (req.method === "POST" && url.pathname === "/opencode.ai/inference/openai/v1/responses") {
+			const key = req.headers.authorization?.replace(/^Bearer /i, "") ?? null;
+			const { model } = JSON.parse(await body(req)) as { model?: unknown };
+			openCodeRequests.push({ key, model });
+			const fault = openCodeFaults.shift();
+			if (fault) return json(fault.status, fault.body ?? { error: { message: "Simulated" } });
+			if (!key || !openCodeKeys.has(key)) {
+				return json(401, { error: { type: "AuthError", message: "Invalid API key." } });
+			}
+			return json(200, {
+				id: `resp_${randomUUID()}`,
+				object: "response",
+				status: "completed",
+				model,
+				output: [
+					{
+						type: "message",
+						role: "assistant",
+						content: [{ type: "output_text", text: "pong", annotations: [] }],
+					},
+				],
+				usage: { input_tokens: 5, output_tokens: 1, total_tokens: 6 },
+			});
 		}
 
 		if (url.pathname === "/github.com/login/oauth/authorize") {
