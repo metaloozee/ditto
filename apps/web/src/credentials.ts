@@ -344,7 +344,15 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		return included ? { connectionId: INCLUDED, model: included.name } : null;
 	}
 
-	async included(accountId: string, body: string): Promise<Response> {
+	async included(body: string): Promise<Response> {
+		// Billed to the account this object belongs to, the name it was reached by, never to one
+		// a caller names.
+		const accountId = this.ctx.id.name;
+		if (!accountId) throw new Error("Credentials is reached by its account ID");
+		return this.#sendIncluded(accountId, body);
+	}
+
+	async #sendIncluded(accountId: string, body: string): Promise<Response> {
 		const request = JSON.parse(body) as Record<string, unknown>;
 		const send = this.env.AI && createAiBindingFetch(this.env.AI);
 		for (
@@ -613,7 +621,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		const body = JSON.stringify({
 			messages: [{ role: "user", content: "Reply with exactly one word: pong" }],
 		});
-		const response = await this.included(trouble.accountId, body).catch(
+		const response = await this.#sendIncluded(trouble.accountId, body).catch(
 			() => "unreachable" as const,
 		);
 		if (response !== "unreachable") await response.body?.cancel();

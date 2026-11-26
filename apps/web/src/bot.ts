@@ -276,7 +276,7 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 			if (!model) throw new Error(`Pi has no Workers AI model ${grant.included}`);
 			const through = this.#credentials(accountId);
 			const fetch: typeof globalThis.fetch = async (_url, init) =>
-				through.included(accountId, typeof init?.body === "string" ? init.body : "");
+				through.included(typeof init?.body === "string" ? init.body : "");
 			return { models, model, fetch };
 		}
 		// A ChatGPT plan pair runs on Pi's `openai` provider against the plan-usage Responses

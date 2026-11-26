@@ -84,10 +84,10 @@ export interface CredentialsRpc {
 		refused: string,
 	): Promise<{ key: string } | { fault: Fault } | null>;
 	/**
-	 * Sends one Workers AI chat completion `body` for `accountId` to the included model, through
-	 * AI Gateway with the account in its metadata. Refused with 403 when none is offered.
+	 * Sends one Workers AI chat completion `body` to the included model, through AI Gateway with
+	 * this object's own account in its metadata. Refused with 403 when none is offered.
 	 */
-	included(accountId: string, body: string): Promise<Response>;
+	included(body: string): Promise<Response>;
 	/**
 	 * Records that `botId` has work waiting on `pair`'s connection, and the `fault` it met if
 	 * it met one. The object probes the provider with backoff and calls the bot's `recover`
