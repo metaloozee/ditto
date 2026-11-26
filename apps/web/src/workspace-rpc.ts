@@ -86,6 +86,8 @@ export interface OpenFaults {
 export interface WorkspaceRpc {
 	open(workspaceId: string, accountId: string, faults?: OpenFaults): Promise<OpenedWorkspace>;
 	members(): Promise<Member[]>;
+	/** Test stage only, until specialist creation exists: adds a bot to membership. */
+	addSpecialist(member: Member): Promise<void>;
 	reconcileBotList(): Promise<void>;
 	evict(): void;
 }

@@ -245,7 +245,15 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 
 	async members(): Promise<Member[]> {
 		const chiefOfStaff = await this.ctx.storage.get<ChiefOfStaff>("chiefOfStaff");
-		return chiefOfStaff ? [chiefOfStaff] : [];
+		const specialists = (await this.ctx.storage.get<Member[]>("specialists")) ?? [];
+		return chiefOfStaff ? [chiefOfStaff, ...specialists] : specialists;
+	}
+
+	async addSpecialist(member: Member): Promise<void> {
+		if (this.env.TEST_HOOKS !== "on") throw new Error("Specialists can't be created yet");
+		const specialists = (await this.ctx.storage.get<Member[]>("specialists")) ?? [];
+		await this.ctx.storage.put("specialists", [...specialists, member]);
+		await this.reconcileBotList();
 	}
 
 	/**

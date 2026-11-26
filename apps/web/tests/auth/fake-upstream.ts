@@ -38,7 +38,8 @@ export type OpenCodeFault = { status: number; body?: unknown };
 
 /**
  * How OpenCode streams its reply to the next turn: these text deltas in order, then the
- * completed response. A held reply sends the deltas and then waits, until the caller hangs up.
+ * completed response. A held reply sends the deltas and then waits, until the caller hangs up
+ * or the test releases it.
  */
 export type OpenCodeReply = { deltas: string[]; hold?: boolean };
 
@@ -152,6 +153,8 @@ export async function startFakeUpstream() {
 	const openCodeReplies: OpenCodeReply[] = [];
 	// Keys whose streamed turn the caller hung up on before it completed.
 	const openCodeHungUp: string[] = [];
+	// Held turns by key, each finishing its stream when released.
+	const openCodeHeld = new Map<string, () => void>();
 	const chatgptTokens: ChatGPTTokens[] = [];
 	const chatgptRequests: ChatGPTRequest[] = [];
 
@@ -243,6 +246,13 @@ export async function startFakeUpstream() {
 		}
 		if (url.pathname === "/__opencode/requests") return json(200, openCodeRequests);
 		if (url.pathname === "/__opencode/hung-up") return json(200, openCodeHungUp);
+		if (req.method === "POST" && url.pathname === "/__opencode/release") {
+			const { key } = JSON.parse(await body(req)) as { key: string };
+			const finish = openCodeHeld.get(key);
+			openCodeHeld.delete(key);
+			finish?.();
+			return json(finish ? 204 : 404, null);
+		}
 		if (req.method === "POST" && url.pathname === "/opencode.ai/inference/openai/v1/responses") {
 			const key = req.headers.authorization?.replace(/^Bearer /i, "") ?? null;
 			const { model, stream } = JSON.parse(await body(req)) as {
@@ -263,7 +273,8 @@ export async function startFakeUpstream() {
 					if (!res.writableEnded) openCodeHungUp.push(key);
 				});
 				for (const event of head) res.write(event);
-				if (!reply.hold) res.end(tail.join(""));
+				if (reply.hold) openCodeHeld.set(key, () => res.end(tail.join("")));
+				else res.end(tail.join(""));
 				return;
 			}
 			return json(200, {
