@@ -85,15 +85,14 @@ const SIDEBAR_STYLE = {
 const FACE_ROW =
 	"h-14 gap-3 rounded-xl px-2 data-active:bg-background data-active:shadow-sm data-active:hover:bg-background group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:p-0!";
 
-/** Ditto's first words, the same on every visit until conversation arrives (#19). */
+/** Ditto's first words, the same on every visit until conversation history arrives (#19). */
 const GREETINGS = [
 	"Hi, I’m Ditto, your Chief of Staff.",
 	"Ask me for something, and I’ll hand it to the right bot and check the work before it comes back to you.",
 	"We share one computer. It starts when there’s work to do.",
-	"Chat is on its way. Until then, take a look around.",
 ];
 /** Uneven, tightening gaps read as one arrival rather than a metronome. */
-const GREETING_DELAYS_MS = [0, 70, 130, 180];
+const GREETING_DELAYS_MS = [0, 70, 130];
 
 /** The docked panel needs room beside the conversation; narrower screens get a drawer. */
 function useDocked() {
