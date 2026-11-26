@@ -46,9 +46,19 @@ export async function chooseDefaultPair(pair: Pair) {
 	return refusal(response);
 }
 
+/** Disconnects `connectionId` and forgets its access. Answers why it couldn't, or nothing. */
+export async function disconnectModel(connectionId: string) {
+	const response = await fetch(`/api/models/${encodeURIComponent(connectionId)}`, {
+		method: "DELETE",
+	}).catch(() => null);
+	return refusal(response);
+}
+
 /** Probes the connection once. Settles once Ditto has its new state; reread it to see it. */
 export async function checkConnection(connectionId: string): Promise<void> {
-	await fetch(`/api/models/${connectionId}/check`, { method: "POST" }).catch(() => null);
+	await fetch(`/api/models/${encodeURIComponent(connectionId)}/check`, { method: "POST" }).catch(
+		() => null,
+	);
 }
 
 /** The account's model access as it is now, read from the browser; null when unreachable. */

@@ -18,6 +18,7 @@ import {
 	checkConnection,
 	chooseDefaultPair,
 	connectOpenCodeKey,
+	disconnectModel,
 	getModelAccess,
 } from "#/lib/model-access-api.ts";
 import { OPENCODE_MODELS } from "#/lib/model-access.ts";
@@ -135,6 +136,18 @@ function Settings() {
 						const refused = await connectOpenCodeKey(key, model);
 						if (!refused) await router.invalidate();
 						return refused;
+					}}
+					onDisconnect={async (connectionId) => {
+						const refused = await disconnectModel(connectionId);
+						if (refused) {
+							toast({
+								id: "notice-disconnect",
+								state: "error",
+								message: "The connection is still there",
+								description: refused,
+							});
+						}
+						await router.invalidate();
 					}}
 					onCheck={async (connectionId) => {
 						await checkConnection(connectionId);
