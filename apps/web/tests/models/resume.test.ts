@@ -22,9 +22,9 @@ const OPENCODE: Pair = { connectionId: "opencode", model: "gpt-5.4-mini" };
 const CHATGPT: Pair = { connectionId: "chatgpt", model: "gpt-5.5" };
 
 /** A signed-in owner who has opened their personal workspace, with its Chief of Staff's ID. */
-async function owner() {
+async function owner(user = gitHubUser()) {
 	const visitor = await newVisitor();
-	await continueWithGitHub(visitor.page, gitHubUser());
+	await continueWithGitHub(visitor.page, user);
 	const opened = await visitor.context.request.post("/api/workspaces/open");
 	expect(opened.status()).toBe(200);
 	const { workspaceId, chiefOfStaff } = (await opened.json()) as {
@@ -244,7 +244,8 @@ describe("three bots interrupted at a limit", () => {
 
 describe("another account", () => {
 	it("cannot resume this owner's turn", async () => {
-		const alice = await owner();
+		const aliceUser = gitHubUser();
+		const alice = await owner(aliceUser);
 		const key = await connectKey(alice.context);
 		const token = await connectChatGPT(alice.context);
 		await interruptAll(alice.context, alice.workspaceId, key, [alice.botId]);
@@ -264,7 +265,9 @@ describe("another account", () => {
 			resume(stranger.context, alice.workspaceId, alice.botId, turnId, CHATGPT),
 		).resolves.toBe(401);
 
-		await expect(onlyTurn(alice.context, alice.workspaceId, alice.botId)).resolves.toMatchObject({
+		// Signed in again: the stage's sessions lapse after a few idle seconds.
+		const again = await owner(aliceUser);
+		await expect(onlyTurn(again.context, alice.workspaceId, alice.botId)).resolves.toMatchObject({
 			pair: OPENCODE,
 			status: "interrupted",
 		});
