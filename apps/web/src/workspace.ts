@@ -511,10 +511,3 @@ export class Bot extends DurableObject {
 		return Response.json({ object: "Bot" });
 	}
 }
-
-/** One per account, holding its model connections. */
-export class Credentials extends DurableObject {
-	override fetch(): Response {
-		return Response.json({ object: "Credentials" });
-	}
-}

@@ -19,6 +19,17 @@ export interface Connection {
 	models: readonly string[];
 }
 
+/**
+ * The models an OpenCode key is offered with: OpenCode Zen's OpenAI Responses models, the
+ * route the feasibility study chose. The first is the one it proved.
+ */
+export const OPENCODE_MODELS: readonly string[] = [
+	"gpt-5.4-mini",
+	"gpt-5.4",
+	"gpt-5.5",
+	"gpt-5.6-luna",
+];
+
 export const PROVIDER_NAMES: Record<ConnectionProvider, string> = {
 	opencode: "OpenCode",
 	chatgpt: "ChatGPT plan",

@@ -5,6 +5,7 @@ import * as Alchemy from "alchemy";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 
+import type { CredentialsRpc } from "./apps/web/src/credentials-rpc.ts";
 import type { WorkspaceRpc } from "./apps/web/src/workspace-rpc.ts";
 
 const AuthDatabase = Cloudflare.D1.Database("auth-db", {
@@ -53,8 +54,10 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 				),
 				// Encrypts the shared computer's stored browser cookies (#20). Losing it loses them.
 				COOKIE_ENCRYPTION_KEY: Config.Redacted("COOKIE_ENCRYPTION_KEY"),
+				// Encrypts each account's stored model connections (#18). Losing it loses them.
+				CREDENTIALS_ENCRYPTION_KEY: Config.Redacted("CREDENTIALS_ENCRYPTION_KEY"),
 				BOT: Cloudflare.DurableObject<unknown>("bot", { className: "Bot" }),
-				CREDENTIALS: Cloudflare.DurableObject<unknown>("credentials", {
+				CREDENTIALS: Cloudflare.DurableObject<CredentialsRpc>("credentials", {
 					className: "Credentials",
 				}),
 				BETTER_AUTH_URL: origin.origin,
@@ -76,6 +79,8 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 							CODE_RESEND_IN: Config.String("CODE_RESEND_IN"),
 							// Shortens the five idle minutes before the shared computer stops.
 							COMPUTER_IDLE_SECONDS: Config.String("COMPUTER_IDLE_SECONDS"),
+							// Where OpenCode's OpenAI API is reached instead of opencode.ai.
+							OPENCODE_BASE_URL: Config.String("OPENCODE_BASE_URL"),
 							// Opens the gateway's test hooks and the interrupted-open, failed-open and failed bot-list faults.
 							TEST_HOOKS: "on",
 						}

@@ -146,7 +146,7 @@ async function openRoute(request: Request): Promise<Response> {
 }
 
 /** Carries the session refresh's cookies on an answer, except a WebSocket upgrade. */
-function withCookies(answer: Response, refreshed: Headers): Response {
+export function withCookies(answer: Response, refreshed: Headers): Response {
 	const cookies = refreshed.getSetCookie();
 	if (answer.status === 101 || cookies.length === 0) return answer;
 	const kept = new Response(answer.body, answer);
