@@ -36,8 +36,8 @@ export async function openCodeTurnHungUp(key: string): Promise<boolean> {
 	return keys.includes(key);
 }
 
-/** Every Responses request simulated OpenCode received that named `key`. */
-export async function openCodeRequests(key: string): Promise<OpenCodeRequest[]> {
+/** Every Responses request simulated OpenCode received that named `key`, or every one at all. */
+export async function openCodeRequests(key?: string): Promise<OpenCodeRequest[]> {
 	const all = (await (await control("requests")).json()) as OpenCodeRequest[];
-	return all.filter((request) => request.key === key);
+	return key === undefined ? all : all.filter((request) => request.key === key);
 }
