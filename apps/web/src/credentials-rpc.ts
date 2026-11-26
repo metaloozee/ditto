@@ -91,6 +91,11 @@ export interface CredentialsRpc {
 	 * that state answers without a probe. Null when the account has no such connection.
 	 */
 	check(accountId: string, connectionId: string): Promise<ConnectionState | null>;
+	/**
+	 * Test stage only: the next ChatGPT rotation saves its replacement, then drops the live
+	 * instance before answering anyone, as an eviction at that moment would.
+	 */
+	evictAfterRotation(): Promise<void>;
 	/** Test stage only: everything the object stores, exactly as stored. */
 	stored(): Promise<Record<string, unknown>>;
 	/** Test stage only: offers this account the included model, or not, whatever the stage says. */

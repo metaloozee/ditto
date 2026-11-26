@@ -97,6 +97,10 @@ async function route(request: Request, accountId: string, rest: string): Promise
 		await credentials.offerIncluded(sent.offered);
 		return new Response(null, { status: 204 });
 	}
+	if (env.TEST_HOOKS === "on" && rest === "/__test/evict-after-rotation" && method === "POST") {
+		await credentials.evictAfterRotation();
+		return new Response(null, { status: 204 });
+	}
 	if (env.TEST_HOOKS === "on" && rest === "/__test/deployment" && method === "PUT") {
 		const sent = await body(request);
 		const optional = (value: unknown) => value === undefined || typeof value === "string";
