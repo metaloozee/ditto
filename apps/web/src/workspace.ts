@@ -1,5 +1,4 @@
 import { Container } from "@cloudflare/containers";
-import { DurableObject } from "cloudflare:workers";
 import { and, eq, notInArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 
@@ -503,11 +502,5 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 		this.deleteSchedules("lifetimeEnded");
 		// A pass belongs to one instance, so it never carries over to the next.
 		await this.ctx.storage.delete(["instancePolicy", "isolation"]);
-	}
-}
-
-export class Bot extends DurableObject {
-	override fetch(): Response {
-		return Response.json({ object: "Bot" });
 	}
 }

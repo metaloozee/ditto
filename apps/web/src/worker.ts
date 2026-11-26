@@ -6,7 +6,8 @@ import { workspaceGateway } from "./lib/workspace-gateway.server.ts";
 // The library reaches it through ctx.exports when a Workspace restarts beside a running instance.
 export { ContainerProxy } from "@cloudflare/containers";
 export { Credentials } from "./credentials.ts";
-export { Bot, Workspace } from "./workspace.ts";
+export { Bot } from "./bot.ts";
+export { Workspace } from "./workspace.ts";
 
 export default {
 	async fetch(request: Request) {

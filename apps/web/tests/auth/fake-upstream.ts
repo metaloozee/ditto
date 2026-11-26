@@ -36,6 +36,55 @@ export type OpenCodeRequest = { key: string | null; model: unknown };
 /** What OpenCode answers the next Responses request with, instead of serving it. */
 export type OpenCodeFault = { status: number; body?: unknown };
 
+/**
+ * How OpenCode streams its reply to the next turn: these text deltas in order, then the
+ * completed response. A held reply sends the deltas and then waits, until the caller hangs up.
+ */
+export type OpenCodeReply = { deltas: string[]; hold?: boolean };
+
+const sseEvent = (event: { type: string } & Record<string, unknown>) =>
+	`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+
+/** The Responses stream events that carry `deltas` as one assistant message. */
+function replyEvents(id: string, model: unknown, deltas: string[]) {
+	const text = deltas.join("");
+	return {
+		head: [
+			sseEvent({ type: "response.created", response: { id, model, status: "in_progress" } }),
+			sseEvent({
+				type: "response.output_item.added",
+				output_index: 0,
+				item: { type: "message", id: `msg_${id}`, role: "assistant", content: [] },
+			}),
+			...deltas.map((delta) =>
+				sseEvent({ type: "response.output_text.delta", output_index: 0, content_index: 0, delta }),
+			),
+		],
+		tail: [
+			sseEvent({
+				type: "response.output_item.done",
+				output_index: 0,
+				item: {
+					type: "message",
+					id: `msg_${id}`,
+					role: "assistant",
+					status: "completed",
+					content: [{ type: "output_text", text, annotations: [] }],
+				},
+			}),
+			sseEvent({
+				type: "response.completed",
+				response: {
+					id,
+					model,
+					status: "completed",
+					usage: { input_tokens: 5, output_tokens: deltas.length, total_tokens: 5 + deltas.length },
+				},
+			}),
+		],
+	};
+}
+
 /** An unsigned ID token: Better Auth's Google code flow only decodes it. */
 const idToken = (claims: GoogleIdentity, audience: string) => {
 	const part = (data: unknown) => Buffer.from(JSON.stringify(data)).toString("base64url");
@@ -67,6 +116,9 @@ export async function startFakeUpstream() {
 	const openCodeKeys = new Set<string>();
 	const openCodeFaults: OpenCodeFault[] = [];
 	const openCodeRequests: OpenCodeRequest[] = [];
+	const openCodeReplies: OpenCodeReply[] = [];
+	// Keys whose streamed turn the caller hung up on before it completed.
+	const openCodeHungUp: string[] = [];
 
 	const server = createServer(async (req, res) => {
 		const url = new URL(req.url ?? "/", "http://fake");
@@ -150,15 +202,34 @@ export async function startFakeUpstream() {
 			openCodeFaults.push(JSON.parse(await body(req)) as OpenCodeFault);
 			return json(204, null);
 		}
+		if (req.method === "POST" && url.pathname === "/__opencode/reply-next") {
+			openCodeReplies.push(JSON.parse(await body(req)) as OpenCodeReply);
+			return json(204, null);
+		}
 		if (url.pathname === "/__opencode/requests") return json(200, openCodeRequests);
+		if (url.pathname === "/__opencode/hung-up") return json(200, openCodeHungUp);
 		if (req.method === "POST" && url.pathname === "/opencode.ai/inference/openai/v1/responses") {
 			const key = req.headers.authorization?.replace(/^Bearer /i, "") ?? null;
-			const { model } = JSON.parse(await body(req)) as { model?: unknown };
+			const { model, stream } = JSON.parse(await body(req)) as {
+				model?: unknown;
+				stream?: unknown;
+			};
 			openCodeRequests.push({ key, model });
 			const fault = openCodeFaults.shift();
 			if (fault) return json(fault.status, fault.body ?? { error: { message: "Simulated" } });
 			if (!key || !openCodeKeys.has(key)) {
 				return json(401, { error: { type: "AuthError", message: "Invalid API key." } });
+			}
+			if (stream === true) {
+				const reply = openCodeReplies.shift() ?? { deltas: ["pong"] };
+				const { head, tail } = replyEvents(`resp_${randomUUID()}`, model, reply.deltas);
+				res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+				res.on("close", () => {
+					if (!res.writableEnded) openCodeHungUp.push(key);
+				});
+				for (const event of head) res.write(event);
+				if (!reply.hold) res.end(tail.join(""));
+				return;
 			}
 			return json(200, {
 				id: `resp_${randomUUID()}`,

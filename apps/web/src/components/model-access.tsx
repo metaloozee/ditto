@@ -1,6 +1,6 @@
 // Model access (#18): the Settings section, the pair select, bot settings and the interruption
 // card. Nothing here talks to the Credentials or Bot objects: each surface reports the owner's
-// choices to its caller, which Settings sends on and `/design/models` only keeps.
+// choices to its caller, which Settings and the workspace send on and `/design/models` only keeps.
 
 import { Popover } from "@base-ui/react/popover";
 import {
@@ -1240,7 +1240,7 @@ export const COMPOSER_PLACEHOLDERS: Record<ComposerMode, (name: string) => strin
  * Send and Stop share one round button. The icons stay mounted in one cell and morph (scale
  * 0.25, 4px blur, fade), so the button reads as the same control changing what it does.
  */
-export function SendOrStop({ mode }: { mode: ComposerMode }) {
+export function SendOrStop({ mode, onStop }: { mode: ComposerMode; onStop?: () => void }) {
 	const running = mode === "running";
 	const icon = (shown: boolean) =>
 		cn(
@@ -1252,6 +1252,7 @@ export function SendOrStop({ mode }: { mode: ComposerMode }) {
 	return (
 		<Button
 			type={running ? "button" : "submit"}
+			onClick={running ? onStop : undefined}
 			size="icon"
 			className="grid rounded-full"
 			aria-label={running ? "Stop" : "Send"}

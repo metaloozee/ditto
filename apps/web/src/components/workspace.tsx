@@ -130,6 +130,8 @@ export function WorkspaceView({
 	onSignOut,
 	messages,
 	composer = "soon",
+	onSend,
+	onStop,
 	onOpenBotSettings,
 	botSettings,
 }: {
@@ -138,10 +140,14 @@ export function WorkspaceView({
 	sidebarPinned: boolean;
 	panelOpen: boolean;
 	onPanelOpenChange: (open: boolean) => void;
-	/** Replaces the fixed greetings; only `/design` passes it until conversation lands (#19). */
+	/** Replaces the fixed greetings once the owner has sent something. */
 	messages?: React.ReactNode;
 	onSignOut: () => void;
 	composer?: ComposerMode;
+	/** Called with the trimmed message when the owner sends one in `ready` mode. */
+	onSend?: (message: string) => void;
+	/** Called when the owner presses Stop in `running` mode. */
+	onStop?: () => void;
 	/** Shows the gear in the bot panel; the caller renders `botSettings` and opens it. */
 	onOpenBotSettings?: () => void;
 	botSettings?: React.ReactNode;
@@ -155,6 +161,8 @@ export function WorkspaceView({
 			onPanelOpenChange={onPanelOpenChange}
 			messages={messages}
 			composer={composer}
+			onSend={onSend}
+			onStop={onStop}
 		/>
 	);
 	const panel = (
@@ -374,12 +382,16 @@ function ConversationPane({
 	onPanelOpenChange,
 	messages,
 	composer,
+	onSend,
+	onStop,
 }: {
 	name: string;
 	panelOpen: boolean;
 	onPanelOpenChange: (open: boolean) => void;
 	messages?: React.ReactNode;
 	composer: ComposerMode;
+	onSend?: (message: string) => void;
+	onStop?: () => void;
 }) {
 	return (
 		<section
@@ -426,17 +438,35 @@ function ConversationPane({
 				</Tooltip>
 				<p className="bot-name-in mt-2 text-caption text-muted-foreground">Chief of Staff</p>
 			</header>
-			<Composer name={name} mode={composer} />
+			<Composer name={name} mode={composer} onSend={onSend} onStop={onStop} />
 		</section>
 	);
 }
 
-function Composer({ name, mode }: { name: string; mode: ComposerMode }) {
+function Composer({
+	name,
+	mode,
+	onSend,
+	onStop,
+}: {
+	name: string;
+	mode: ComposerMode;
+	onSend?: (message: string) => void;
+	onStop?: () => void;
+}) {
 	const off = mode === "soon" || mode === "no-model";
 	return (
 		<form
 			className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pt-10 pb-4"
-			onSubmit={(event) => event.preventDefault()}
+			onSubmit={(event) => {
+				event.preventDefault();
+				const field = event.currentTarget.elements.namedItem("message");
+				if (mode !== "ready" || !(field instanceof HTMLTextAreaElement)) return;
+				const message = field.value.trim();
+				if (!message) return;
+				onSend?.(message);
+				field.value = "";
+			}}
 		>
 			<ProgressiveBlur side="bottom" className="h-full" />
 			<div className="pointer-events-auto relative mx-auto flex w-full max-w-2xl items-end gap-1 rounded-3xl bg-popover p-1.5 shadow-lg ring-1 ring-foreground/10 transition-shadow focus-within:ring-ring/60">
@@ -451,13 +481,20 @@ function Composer({ name, mode }: { name: string; mode: ComposerMode }) {
 					<HugeiconsIcon icon={Add01Icon} />
 				</Button>
 				<textarea
+					name="message"
 					aria-label={`Message ${name}`}
 					placeholder={COMPOSER_PLACEHOLDERS[mode](name)}
 					rows={1}
 					disabled={off}
+					onKeyDown={(event) => {
+						// Enter sends; Shift+Enter, or Enter while composing with an IME, breaks the line.
+						if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+						event.preventDefault();
+						event.currentTarget.form?.requestSubmit();
+					}}
 					className="field-sizing-content max-h-40 min-h-8 flex-1 resize-none bg-transparent px-1 py-1.5 text-base outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed md:text-sm"
 				/>
-				<SendOrStop mode={mode} />
+				<SendOrStop mode={mode} onStop={onStop} />
 			</div>
 		</form>
 	);

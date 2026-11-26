@@ -11,6 +11,14 @@ export interface ModelAccessView {
 /** Why a key wasn't stored: OpenCode refused it, didn't answer, or the model isn't offered. */
 export type ConnectRefusal = "rejected" | "unavailable" | "unknown-model";
 
+/**
+ * What one inference call on `pair` needs, handed to the Bot for that call alone: the pair and
+ * its credential, never the stored connection. Refused when the pair names no usable connection.
+ */
+export type Grant =
+	| { pair: Pair; credential: { type: "api_key"; key: string } }
+	| { refused: "no-model" };
+
 export interface CredentialsRpc {
 	view(): Promise<ModelAccessView>;
 	/** Checks `key` with OpenCode on `model`, then stores it encrypted for `accountId`. */
@@ -21,6 +29,8 @@ export interface CredentialsRpc {
 	): Promise<{ connected: true } | { refused: ConnectRefusal }>;
 	/** False when the pair names no connection of this account, or a model it doesn't offer. */
 	chooseDefault(pair: Pair): Promise<boolean>;
+	/** The credential for one call on `pair`, or on the default pair when it is null. */
+	grant(accountId: string, pair: Pair | null): Promise<Grant>;
 	/** Test stage only: everything the object stores, exactly as stored. */
 	stored(): Promise<Record<string, unknown>>;
 }

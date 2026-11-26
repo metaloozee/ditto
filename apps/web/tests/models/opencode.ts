@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { inject } from "vite-plus/test";
 
-import type { OpenCodeFault, OpenCodeRequest } from "../auth/fake-upstream.ts";
+import type { OpenCodeFault, OpenCodeReply, OpenCodeRequest } from "../auth/fake-upstream.ts";
 
 const control = (path: string, init?: RequestInit) =>
 	fetch(`${inject("upstreamUrl")}/__opencode/${path}`, init);
@@ -22,6 +22,18 @@ export async function openCodeKey(): Promise<string> {
 export async function failNextOpenCodeRequest(fault: OpenCodeFault): Promise<void> {
 	const response = await control("fail-next", { method: "POST", body: JSON.stringify(fault) });
 	if (!response.ok) throw new Error(`Queuing an OpenCode fault failed: ${response.status}`);
+}
+
+/** Makes simulated OpenCode stream `reply` to its next turn, a streamed Responses request. */
+export async function replyToNextOpenCodeTurn(reply: OpenCodeReply): Promise<void> {
+	const response = await control("reply-next", { method: "POST", body: JSON.stringify(reply) });
+	if (!response.ok) throw new Error(`Queuing an OpenCode reply failed: ${response.status}`);
+}
+
+/** Whether a streamed turn that named `key` was hung up on before it completed. */
+export async function openCodeTurnHungUp(key: string): Promise<boolean> {
+	const keys = (await (await control("hung-up")).json()) as string[];
+	return keys.includes(key);
 }
 
 /** Every Responses request simulated OpenCode received that named `key`. */

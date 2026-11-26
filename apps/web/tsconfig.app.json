@@ -7,7 +7,8 @@
     ".wrangler",
     "src/worker.ts",
     "src/workspace.ts",
-    "src/credentials.ts"
+    "src/credentials.ts",
+    "src/bot.ts"
   ],
   "compilerOptions": {
     "target": "ES2022",

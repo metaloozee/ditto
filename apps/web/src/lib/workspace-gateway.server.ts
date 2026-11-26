@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/d1";
 import { personalWorkspace, workspaceBot } from "../db/workspace-schema.ts";
 import type { Member } from "../workspace-rpc.ts";
 import { auth } from "./auth.server.ts";
+import { botRoute } from "./bot-gateway.server.ts";
 import { noSuchFile, serveFile } from "./workspace-files.server.ts";
 import { requestedFileKey } from "./workspace-files.ts";
 
@@ -216,6 +217,8 @@ async function route(request: Request, admitted: Admitted, rest: string): Promis
 		return serveFile(admitted.workspaceId, rest.slice(FILES.length));
 	}
 	if (rest === "/bindings" && method === "GET") return Response.json(await bindings(admitted));
+	const toBot = await botRoute(request, admitted, rest);
+	if (toBot) return toBot;
 	const url = new URL(request.url);
 	const forwarded = new Request(new URL(rest + url.search, url.origin), request);
 	// Replaces anything the client sent, so only the server-resolved ID reaches the object.

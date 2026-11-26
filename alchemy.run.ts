@@ -5,6 +5,7 @@ import * as Alchemy from "alchemy";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 
+import type { BotRpc } from "./apps/web/src/bot-rpc.ts";
 import type { CredentialsRpc } from "./apps/web/src/credentials-rpc.ts";
 import type { WorkspaceRpc } from "./apps/web/src/workspace-rpc.ts";
 
@@ -56,7 +57,7 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 				COOKIE_ENCRYPTION_KEY: Config.Redacted("COOKIE_ENCRYPTION_KEY"),
 				// Encrypts each account's stored model connections (#18). Losing it loses them.
 				CREDENTIALS_ENCRYPTION_KEY: Config.Redacted("CREDENTIALS_ENCRYPTION_KEY"),
-				BOT: Cloudflare.DurableObject<unknown>("bot", { className: "Bot" }),
+				BOT: Cloudflare.DurableObject<BotRpc>("bot", { className: "Bot" }),
 				CREDENTIALS: Cloudflare.DurableObject<CredentialsRpc>("credentials", {
 					className: "Credentials",
 				}),
