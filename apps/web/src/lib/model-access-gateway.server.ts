@@ -40,8 +40,15 @@ async function route(request: Request, accountId: string, rest: string): Promise
 	}
 	if (rest === "/chatgpt" && method === "POST") {
 		const sent = await body(request);
-		const imported: boolean = await credentials.importChatGPT(accountId, sent?.credential);
-		return imported
+		const imported: Awaited<ReturnType<CredentialsRpc["importChatGPT"]>> =
+			await credentials.importChatGPT(accountId, sent?.credential);
+		if (imported === "not-offered") {
+			return Response.json(
+				{ error: "This deployment doesn’t offer the ChatGPT plan" },
+				{ status: 403 },
+			);
+		}
+		return imported === "imported"
 			? new Response(null, { status: 204 })
 			: Response.json(
 					{
@@ -86,6 +93,23 @@ async function route(request: Request, accountId: string, rest: string): Promise
 	}
 	if (env.TEST_HOOKS === "on" && rest === "/__test/evict-after-rotation" && method === "POST") {
 		await credentials.evictAfterRotation();
+		return new Response(null, { status: 204 });
+	}
+	if (env.TEST_HOOKS === "on" && rest === "/__test/deployment" && method === "PUT") {
+		const sent = await body(request);
+		const optional = (value: unknown) => value === undefined || typeof value === "string";
+		if (
+			(sent?.mode !== "self-deployed" && sent?.mode !== "hosted") ||
+			!optional(sent.license) ||
+			!optional(sent.approval)
+		) {
+			return badRequest();
+		}
+		await credentials.deployAs({
+			mode: sent.mode,
+			license: sent.license as string | undefined,
+			approval: sent.approval as string | undefined,
+		});
 		return new Response(null, { status: 204 });
 	}
 	return Response.json({ error: "No such route" }, { status: 404 });

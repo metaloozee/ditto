@@ -21,7 +21,7 @@ import {
 	readModelAccess,
 } from "#/lib/model-access-api.ts";
 import { canMessage, type Interruption, type ModelAccess, type Pair } from "#/lib/model-access.ts";
-import { pendingTurns, sendTurn, stopTurn } from "#/lib/turn.ts";
+import { pendingTurns, resumeTurn, sendTurn, stopTurn } from "#/lib/turn.ts";
 import { getSidebarPinned, openWorkspace } from "#/lib/workspace.ts";
 
 type HomeSearch = { panel?: "computer" };
@@ -60,6 +60,8 @@ interface Exchange {
 	live?: boolean;
 	pair?: Turn["pair"];
 	interruption?: Turn["interruption"];
+	/** How many times a Resume on another pair was refused. */
+	refusals?: number;
 }
 
 const ENDED: Partial<Record<Exchange["status"], string>> = {
@@ -193,6 +195,19 @@ function Home() {
 		update(key, (exchange) => ({ ...exchange, status, live: false }));
 	};
 
+	const resume = async (exchange: Exchange, pair: Pair) => {
+		if (!exchange.id) return;
+		const refused = await resumeTurn(workspaceId, botId, exchange.id, pair);
+		if (!refused) return;
+		update(exchange.key, (each) => ({ ...each, refusals: (each.refusals ?? 0) + 1 }));
+		toast({
+			id: "notice-resume",
+			state: "error",
+			message: "The turn didn’t resume",
+			description: refused,
+		});
+	};
+
 	return (
 		<WorkspaceView
 			account={account}
@@ -228,6 +243,8 @@ function Home() {
 								key={exchange.key}
 								exchange={exchange}
 								access={access}
+								botPair={override ?? view.defaultPair ?? undefined}
+								onResume={(pair) => void resume(exchange, pair)}
 								onCheck={async (connectionId) => {
 									await checkConnection(connectionId);
 									const latest = await readModelAccess();
@@ -244,10 +261,15 @@ function Home() {
 function ExchangeBubbles({
 	exchange,
 	access,
+	botPair,
+	onResume,
 	onCheck,
 }: {
 	exchange: Exchange;
 	access: ModelAccess;
+	/** The pair the bot would start a turn on now: its override, else the default. */
+	botPair: Pair | undefined;
+	onResume: (pair: Pair) => void;
 	onCheck: (connectionId: string) => Promise<void>;
 }) {
 	if (exchange.status === "queued") return <QueuedBubble>{exchange.message}</QueuedBubble>;
@@ -265,16 +287,18 @@ function ExchangeBubbles({
 			)}
 			{exchange.interruption && exchange.pair && (
 				<InterruptionCard
+					// A refused Resume mounts a fresh card, so it offers Resume again.
+					key={exchange.refusals ?? 0}
 					access={access}
-					// Carried on once it runs again on its pair.
+					// Carried on once it runs again, on its own pair or the one it was resumed on.
 					interruption={
 						exchange.status === "interrupted"
 							? waitingOn(access, exchange.pair, exchange.interruption)
 							: "Settled"
 					}
 					turnPair={exchange.pair}
-					// Resuming on another pair is a later ticket, so the card offers none yet.
-					defaultPair={exchange.pair}
+					defaultPair={botPair}
+					onResume={onResume}
 					onCheck={() => onCheck(exchange.pair?.connectionId ?? "")}
 				/>
 			)}
