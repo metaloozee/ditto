@@ -14,7 +14,12 @@ import { ModelAccessSection } from "#/components/model-access.tsx";
 import { toast } from "#/components/ui/toast.tsx";
 import { authClient, useSignOut } from "#/lib/auth-client.ts";
 import { resendAtFrom, sendLinkEmailCode } from "#/lib/email-code-client.ts";
-import { chooseDefaultPair, connectOpenCodeKey, getModelAccess } from "#/lib/model-access-api.ts";
+import {
+	accessOf,
+	chooseDefaultPair,
+	connectOpenCodeKey,
+	getModelAccess,
+} from "#/lib/model-access-api.ts";
 import { OPENCODE_MODELS } from "#/lib/model-access.ts";
 
 type SettingsSearch = { outcome?: LinkOutcome; method?: Method };
@@ -110,7 +115,7 @@ function Settings() {
 			onSignOut={() => void signOut()}
 			modelAccess={
 				<ModelAccessSection
-					access={{ connections: modelAccess.connections }}
+					access={accessOf(modelAccess)}
 					chatgptOffered={false}
 					opencodeModels={OPENCODE_MODELS}
 					defaultPair={modelAccess.defaultPair ?? undefined}
