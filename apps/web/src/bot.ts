@@ -8,6 +8,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { CLOUDFLARE_GATEWAY_BINDING_AUTH_SENTINEL } from "@earendil-works/pi-ai/api/cloudflare-ai-binding";
 import { cloudflareWorkersAIProvider } from "@earendil-works/pi-ai/providers/cloudflare-workers-ai";
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { DurableObject } from "cloudflare:workers";
 
@@ -24,6 +25,7 @@ import type { CredentialsRpc, Fault, Grant } from "./credentials-rpc.ts";
 import type { Credentials } from "./credentials.ts";
 import type { AuthEnv } from "./lib/auth.ts";
 import { INCLUDED, type Pair } from "./lib/model-access.ts";
+import { openaiFetch } from "./lib/openai-upstream.ts";
 import { faultOf } from "./lib/provider-fault.ts";
 
 type Granted = Exclude<Grant, { refused: unknown }>;
@@ -31,7 +33,11 @@ type Ended = Exclude<TurnStatus, "running">;
 
 const encoder = new TextEncoder();
 
-/** The tools a bot's model may call, as the model sees them. */
+/**
+ * The tools a bot's model may call, as the model sees them. Offered on the included model
+ * only so far: on the ChatGPT plan, Pi sends their declarations as a second `developer` item,
+ * which no recorded run of the plan-usage flow has carried.
+ */
 const TOOLS: Tool[] = [
 	{
 		name: "current_time",
@@ -63,6 +69,9 @@ function toolResult(block: AssistantMessage["content"][number]): ToolResultMessa
 		},
 	];
 }
+/** The bot's instructions, sent with every turn until bots carry their own. */
+const INSTRUCTIONS = "You are Ditto, the owner's Chief of Staff. Reply plainly and briefly.";
+
 /** The most turns one `pending` call reads, within storage's limit on one `get`. */
 const PENDING_LIMIT = 100;
 
@@ -230,10 +239,18 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 				through.included(accountId, typeof init?.body === "string" ? init.body : "");
 			return { models, model, fetch };
 		}
-		await credentials.modify("opencode", async () => grant.credential);
-		models.setProvider(opencodeProvider());
-		const catalogued = models.getModel("opencode", grant.pair.model);
-		if (!catalogued) throw new Error(`Pi has no OpenCode model ${grant.pair.model}`);
+		// A ChatGPT plan pair runs on Pi's `openai` provider against the plan-usage Responses
+		// endpoint, never the Codex backend. Its grant is the access token alone, which Pi sends
+		// as a bearer token exactly as it would an OAuth credential's.
+		const chatgpt = grant.pair.connectionId === "chatgpt";
+		const provider = chatgpt ? "openai" : "opencode";
+		await credentials.modify(provider, async () => grant.credential);
+		models.setProvider(chatgpt ? openaiProvider() : opencodeProvider());
+		const catalogued = models.getModel(provider, grant.pair.model);
+		if (!catalogued) throw new Error(`Pi has no ${provider} model ${grant.pair.model}`);
+		// Pi drops the fields the plan-usage flow rejects only for api.openai.com itself, so that
+		// base URL stays as catalogued and the test stage reroutes through `fetch` instead.
+		if (chatgpt) return { models, model: catalogued, fetch: openaiFetch(this.env.OAUTH_UPSTREAM) };
 		const model = { ...catalogued, baseUrl: this.env.OPENCODE_BASE_URL ?? catalogued.baseUrl };
 		return { models, model, fetch: undefined };
 	}
@@ -348,6 +365,7 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 			send = route.fetch ?? fetch;
 			const now = Date.now();
 			const context: Context = {
+				systemPrompt: INSTRUCTIONS,
 				messages: [
 					{ role: "user", content: turn.message, timestamp: now },
 					// A resumed turn continues from what it already said.
@@ -373,7 +391,7 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 							]
 						: []),
 				],
-				tools: TOOLS,
+				...("included" in grant ? { tools: TOOLS } : {}),
 			};
 			// Each round streams one reply; one that calls tools gets their results and goes again.
 			let reply: AssistantMessage;

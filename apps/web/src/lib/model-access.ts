@@ -30,6 +30,18 @@ export const OPENCODE_MODELS: readonly string[] = [
 	"gpt-5.6-luna",
 ];
 
+/**
+ * The models a ChatGPT plan is offered with, on the plan-usage Responses endpoint. The first is
+ * the one the feasibility study proved. Each is a reasoning model in Pi's catalogue, so Pi sends a
+ * bot's instructions as a `developer` item, never the `system` item the flow rejects.
+ */
+export const CHATGPT_MODELS: readonly string[] = [
+	"gpt-5.6-luna",
+	"gpt-5.5",
+	"gpt-5.4",
+	"gpt-5.4-mini",
+];
+
 export const PROVIDER_NAMES: Record<ConnectionProvider, string> = {
 	opencode: "OpenCode",
 	chatgpt: "ChatGPT plan",
