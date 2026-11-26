@@ -62,6 +62,39 @@ function askedText(input: unknown): string | null {
 		.join("");
 }
 
+/**
+ * A request that reached simulated api.openai.com: its path, the bearer token, the model, the
+ * top-level body fields and the roles of its input items, as the plan-usage flow checks them.
+ */
+export type ChatGPTRequest = {
+	path: string;
+	token: string | null;
+	model: unknown;
+	fields: string[];
+	roles: string[];
+};
+
+/** A Sign in with ChatGPT token pair simulated OpenAI issued. */
+export type ChatGPTTokens = { access: string; refresh: string };
+
+/** Fields OpenAI's plan-usage docs say the Sign in with ChatGPT flow rejects. */
+const SIWC_UNSUPPORTED = ["temperature", "max_output_tokens", "previous_response_id", "prompt"];
+
+/** The plan-usage flow's admission rules, from `feasibility/simulated-provider.ts`. */
+function siwcRefusal(sent: Record<string, unknown>, roles: string[]) {
+	const field = SIWC_UNSUPPORTED.find((name) => name in sent);
+	const param = field ?? (roles.includes("system") ? "input" : undefined);
+	const unsupported = param ?? (sent.store !== false || sent.stream !== true ? "store" : undefined);
+	if (!unsupported) return undefined;
+	return {
+		error: {
+			code: "subscription_sharing_unsupported_capability",
+			message: "Simulated unsupported capability",
+			param: unsupported,
+		},
+	};
+}
+
 const sseEvent = (event: { type: string } & Record<string, unknown>) =>
 	`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 
@@ -146,6 +179,8 @@ export async function startFakeUpstream() {
 	const openCodeAsked: { key: string | null; text: string | null }[] = [];
 	// Held turns by key, each finishing its stream when released.
 	const openCodeHeld = new Map<string, (() => void)[]>();
+	const chatgptTokens: ChatGPTTokens[] = [];
+	const chatgptRequests: ChatGPTRequest[] = [];
 
 	const server = createServer(async (req, res) => {
 		const url = new URL(req.url ?? "/", "http://fake");
@@ -333,6 +368,38 @@ export async function startFakeUpstream() {
 				],
 				usage: { input_tokens: 5, output_tokens: 1, total_tokens: 6 },
 			});
+		}
+
+		// Sign in with ChatGPT: tests issue token pairs and read every request api.openai.com got.
+		if (req.method === "POST" && url.pathname === "/__chatgpt/tokens") {
+			chatgptTokens.push(JSON.parse(await body(req)) as ChatGPTTokens);
+			return json(204, null);
+		}
+		if (url.pathname === "/__chatgpt/requests") return json(200, chatgptRequests);
+		if (url.pathname.startsWith("/api.openai.com/")) {
+			const token = req.headers.authorization?.replace(/^Bearer /i, "") ?? null;
+			const parsed: unknown = JSON.parse((await body(req)) || "{}");
+			const sent = (typeof parsed === "object" && parsed ? parsed : {}) as Record<string, unknown>;
+			const input = Array.isArray(sent.input) ? (sent.input as { role?: unknown }[]) : [];
+			const roles = input.flatMap((item) => (typeof item.role === "string" ? [item.role] : []));
+			chatgptRequests.push({
+				path: url.pathname,
+				token,
+				model: sent.model,
+				fields: Object.keys(sent),
+				roles,
+			});
+			if (req.method !== "POST" || url.pathname !== "/api.openai.com/v1/responses") {
+				return json(404, { error: { message: "Not the plan-usage endpoint" } });
+			}
+			if (!chatgptTokens.some((issued) => issued.access === token)) {
+				return json(401, { error: { code: "subscription_sharing_invalid_user" } });
+			}
+			const refused = siwcRefusal(sent, roles);
+			if (refused) return json(400, refused);
+			const { head, tail } = replyEvents(`resp_${randomUUID()}`, sent.model, ["pong"]);
+			res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+			return res.end([...head, ...tail].join(""));
 		}
 
 		if (url.pathname === "/github.com/login/oauth/authorize") {

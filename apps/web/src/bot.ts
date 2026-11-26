@@ -1,4 +1,5 @@
 import { createModels, InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { DurableObject } from "cloudflare:workers";
 
@@ -16,12 +17,16 @@ import type { CredentialsRpc, Fault, Grant } from "./credentials-rpc.ts";
 import type { Credentials } from "./credentials.ts";
 import type { AuthEnv } from "./lib/auth.ts";
 import type { Pair } from "./lib/model-access.ts";
+import { openaiFetch } from "./lib/openai-upstream.ts";
 import { faultOf } from "./lib/provider-fault.ts";
 
 type Granted = Exclude<Grant, { refused: unknown }>;
 type Ended = Exclude<TurnStatus, "running">;
 
 const encoder = new TextEncoder();
+
+/** The bot's instructions, sent with every turn until bots carry their own. */
+const INSTRUCTIONS = "You are Ditto, the owner's Chief of Staff. Reply plainly and briefly.";
 
 /** The most turns one `pending` call reads, within storage's limit on one `get`. */
 const PENDING_LIMIT = 100;
@@ -289,9 +294,11 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		// The provider's last answer, which says whether a failed call met a limit, an outage or
 		// a refused key.
 		const seen: { answer: Response | "unreachable" | null } = { answer: null };
+		const chatgpt = turn.pair.connectionId === "chatgpt";
+		const send = chatgpt ? openaiFetch(this.env.OAUTH_UPSTREAM) : fetch;
 		const observed = async (input: RequestInfo | URL, init?: RequestInit) => {
 			try {
-				const response = await fetch(input, init);
+				const response = await send(input, init);
 				seen.answer = response;
 				return response;
 			} catch (error) {
@@ -300,21 +307,30 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 			}
 		};
 		try {
+			// A ChatGPT plan pair runs on Pi's `openai` provider against the plan-usage Responses
+			// endpoint, never the Codex backend. Its grant is the access token alone, which Pi sends
+			// as a bearer token exactly as it would an OAuth credential's.
+			const provider = chatgpt ? "openai" : "opencode";
 			const credentials = new InMemoryCredentialStore();
-			await credentials.modify("opencode", async () => grant.credential);
+			await credentials.modify(provider, async () => grant.credential);
 			const models = createModels({
 				credentials,
 				// No ambient env or files: the call uses only the credential it was granted.
 				authContext: { env: async () => undefined, fileExists: async () => false },
 			});
-			models.setProvider(opencodeProvider());
-			const catalogued = models.getModel("opencode", turn.pair.model);
-			if (!catalogued) throw new Error(`Pi has no OpenCode model ${turn.pair.model}`);
-			const model = { ...catalogued, baseUrl: this.env.OPENCODE_BASE_URL ?? catalogued.baseUrl };
+			models.setProvider(chatgpt ? openaiProvider() : opencodeProvider());
+			const catalogued = models.getModel(provider, turn.pair.model);
+			if (!catalogued) throw new Error(`Pi has no ${provider} model ${turn.pair.model}`);
+			// Pi drops the fields the plan-usage flow rejects only for api.openai.com itself, so that
+			// base URL stays as catalogued and the test stage reroutes through `fetch` instead.
+			const model = chatgpt
+				? catalogued
+				: { ...catalogued, baseUrl: this.env.OPENCODE_BASE_URL ?? catalogued.baseUrl };
 			const now = Date.now();
 			const events = models.stream(
 				model,
 				{
+					systemPrompt: INSTRUCTIONS,
 					messages: [
 						{ role: "user", content: turn.message, timestamp: now },
 						// A resumed turn continues from what it already said.

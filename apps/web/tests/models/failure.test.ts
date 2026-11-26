@@ -2,6 +2,7 @@ import type { BrowserContext, Page } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
 import { continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
+import { chatgptCredential, chatgptRequests } from "./chatgpt.ts";
 import {
 	endOpenCodeOutage,
 	openCodeKey,
@@ -179,5 +180,48 @@ describe("a revoked key", () => {
 		await expect(openCodeRequests(fresh)).resolves.toEqual(
 			Array.from({ length: 3 }, () => ({ key: fresh, model: "gpt-5.4-mini" })),
 		);
+	}, 60_000);
+});
+
+describe("a second connection", () => {
+	it("gets no request while the selected one is in trouble, until the owner selects it", async () => {
+		const { context, workspaceId, botId } = await owner();
+		const key = await connectKey(context);
+		const credential = await chatgptCredential();
+		const imported = await context.request.post("/api/models/chatgpt", { data: { credential } });
+		expect(imported.status()).toBe(204);
+		await startOpenCodeOutage(key);
+
+		const post = (message: string) =>
+			context.request.post(`${botPath(workspaceId, botId)}/turns`, { data: { message } });
+		const interrupted = await post("Draft the weekly update.");
+		expect(interrupted.status()).toBe(200);
+		expect(await interrupted.text()).toContain('"status":"interrupted"');
+		expect((await post("Also add the hiring numbers.")).status()).toBe(202);
+		// Probes keep going to OpenCode; the healthy plan is never tried in its place.
+		await new Promise((resolve) => setTimeout(resolve, 3000));
+		expect(await requestCount(key)).toBeGreaterThan(2);
+		await expect(chatgptRequests(credential.access)).resolves.toEqual([]);
+
+		const chosen = await context.request.put("/api/models/default", {
+			data: { connectionId: "chatgpt", model: "gpt-5.6-luna" },
+		});
+		expect(chosen.status()).toBe(204);
+		await endOpenCodeOutage(key);
+
+		// The interrupted turn finishes on its own pair; only the queued one takes the new choice.
+		await expect
+			.poll(() => turns(context, workspaceId, botId), { timeout: 20_000 })
+			.toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({ pair: PAIR, status: "completed" }),
+					expect.objectContaining({
+						pair: { connectionId: "chatgpt", model: "gpt-5.6-luna" },
+						message: "Also add the hiring numbers.",
+						status: "completed",
+					}),
+				]),
+			);
+		await expect(chatgptRequests(credential.access)).resolves.toHaveLength(1);
 	}, 60_000);
 });
