@@ -252,3 +252,48 @@ describe("an expired ChatGPT plan token", () => {
 		}
 	});
 });
+
+describe("a rotation the owner overtook", () => {
+	it("is dropped when the plan was disconnected meanwhile, and the waiting turn is refused", async () => {
+		const { context, workspaceId, bots } = await owner();
+		const credential = await importExpired(context);
+		await planNextRefresh({ hold: true });
+
+		const sent = post(context, workspaceId, bots[0], "Draft the update.");
+		await expect.poll(() => rotationCount(credential.refresh)).toBe(1);
+		expect((await context.request.delete("/api/models/chatgpt")).status()).toBe(204);
+		await releaseRefresh();
+
+		const refused = await sent;
+		expect(refused.status).toBe(409);
+		const atRest = await (await context.request.get("/api/models/__test/stored")).text();
+		expect(atRest).not.toContain("connection:chatgpt");
+		await expect(chatgptState(context)).resolves.toBeUndefined();
+		const [rotation] = await chatgptRefreshes(credential.refresh);
+		await expect(chatgptRequests(rotation?.issued?.access ?? "none")).resolves.toEqual([]);
+	});
+
+	it("gives way to a newer import, whose token the waiting turn uses", async () => {
+		const { context, workspaceId, bots } = await owner();
+		const credential = await importExpired(context);
+		await planNextRefresh({ hold: true });
+
+		const sent = post(context, workspaceId, bots[0], "Draft the update.");
+		await expect.poll(() => rotationCount(credential.refresh)).toBe(1);
+		const newer = await chatgptCredential();
+		const imported = await context.request.post("/api/models/chatgpt", {
+			data: { credential: newer },
+		});
+		expect(imported.status()).toBe(204);
+		await releaseRefresh();
+
+		const turn = await sent;
+		expect(turn.body).toContain('"status":"completed"');
+		const [rotation] = await chatgptRefreshes(credential.refresh);
+		await expect(chatgptRequests(rotation?.issued?.access ?? "none")).resolves.toEqual([]);
+		await expect(chatgptRequests(newer.access)).resolves.toHaveLength(1);
+		// The newer import is what stays.
+		expect((await post(context, workspaceId, bots[0], "And again.")).status).toBe(200);
+		await expect(chatgptRequests(newer.access)).resolves.toHaveLength(2);
+	});
+});

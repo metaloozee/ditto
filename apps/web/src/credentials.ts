@@ -650,6 +650,12 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 					resource: OPENAI_RESOURCE,
 				}),
 			}).catch(() => "unreachable" as const);
+			// A disconnect or a newer import while the rotation was out wins over its answer.
+			const current = await this.ctx.storage.get<StoredChatGPT>("connection:chatgpt");
+			if (current?.signIn.iv !== chatgpt.signIn.iv) {
+				if (answer !== "unreachable") await answer.body?.cancel().catch(() => {});
+				return current ? this.#currentChatGPT(accountId) : null;
+			}
 			const next =
 				answer !== "unreachable" && answer.ok
 					? rotated(await answer.json().catch(() => null), signIn)
