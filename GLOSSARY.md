@@ -33,6 +33,37 @@ _Avoid_: Host, admin
 A model the operator provides to every Ditto account on their deployment, paid for by the operator rather than through a model connection.
 _Avoid_: Free model, default key
 
+**Pair**
+
+A model connection, or the included model, together with one of its models. Every turn runs on one pair.
+_Avoid_: Model choice, route
+
+**Default pair**
+
+The pair the account holder chose for every bot without an override. The first model connection the holder connects becomes it; the included model is the default only once chosen.
+
+**Override**
+
+A bot's own pair, used in place of the default pair. It names a whole pair or nothing.
+_Avoid_: Bot model
+
+**Turn**
+
+One message from the owner to a bot and the bot's reply. A turn keeps the pair it started on, unless the owner resumes it on another.
+
+**Grant**
+
+What a bot receives from the account for one call on a pair: the credential that call needs and nothing more, never the model connection itself.
+
+**Fault**
+
+Why a model connection or the included model can't answer for now: a limit, an outage, or a credential the provider no longer accepts. Ditto keeps checking until it answers, except for a refused credential, which waits for the account holder to reconnect.
+_Avoid_: Trouble, error
+
+**Interruption**
+
+A turn stopped by a fault. It keeps its reply so far and its pair, and messages sent meanwhile wait behind it. It carries on on its own pair once the fault clears, or on another pair only when the owner resumes it there.
+
 **Workspace**
 
 The personal space where one owner works with Ditto and their team of bots on a shared computer.

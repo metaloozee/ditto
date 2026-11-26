@@ -27,6 +27,8 @@ const OPENAI_TOKEN = "https://auth.openai.com/api/accounts/oauth/token";
 /** The resource a Sign in with ChatGPT token is for, which a refresh names again. */
 const OPENAI_RESOURCE = "https://api.openai.com/v1";
 const PLAN_SCOPE = "chatgpt.tokens.use.direct";
+/** What every probe asks, and the key check on connect too: the smallest reply there is. */
+const PROBE = "Reply with exactly one word: pong";
 /** A rotated token counts as expired this long early, as Pi's own sign-in does. */
 const EXPIRY_MARGIN_MS = 3 * 60_000;
 
@@ -126,10 +128,10 @@ function rotated(answer: unknown, previous: SignIn): SignIn | undefined {
 type Access = { access: string } | { fault: Fault };
 
 /**
- * A connection in trouble, stored as `trouble:<connectionId>` until a probe gets an answer.
- * `bots` have work waiting on it, and are woken on recovery.
+ * A source's fault, stored under `faultKey` until a probe gets an answer. `bots` have work
+ * waiting on it, and are woken on recovery.
  */
-interface Trouble extends Fault {
+interface StoredFault extends Fault {
 	accountId: string;
 	/** The model the probes ask: the one the first interrupted turn was on. */
 	model: string;
@@ -138,6 +140,9 @@ interface Trouble extends Fault {
 	probeAt: number;
 	bots: string[];
 }
+
+const connectionKey = (connectionId: string) => `connection:${connectionId}`;
+const faultKey = (connectionId: string) => `fault:${connectionId}`;
 
 /** Probes wait a second, then twice as long after each failure, up to five minutes. */
 const PROBE_BASE_MS = 1000;
@@ -149,10 +154,10 @@ function nextProbe(attempt: number, resetsAt: string | undefined, now = Date.now
 	return Math.max(now + backoff, resetsAt ? Date.parse(resetsAt) : 0);
 }
 
-/** Whether the connection is probed: a refused key waits for the owner to reconnect instead. */
-const probed = (trouble: Trouble) => trouble.state !== "ReconnectNeeded";
+/** Whether the source is probed: a refused key waits for the owner to reconnect instead. */
+const probed = (stored: StoredFault) => stored.state !== "ReconnectNeeded";
 
-const faultIn = ({ state, resetsAt }: Trouble): Fault =>
+const bare = ({ state, resetsAt }: StoredFault): Fault =>
 	resetsAt ? { state, resetsAt } : { state };
 
 /** A probe's outcome: "ok" once the provider answers, else the fault its answer names. */
@@ -190,31 +195,27 @@ async function seal(secret: string, plain: string, scope: string): Promise<Seale
 	return { iv: base64(iv), data: base64(data) };
 }
 
-/**
- * Asks OpenCode for the smallest reply on `model`. Only a 401 or 403 means the key itself is
- * refused; any other failure says nothing about the key.
- */
-async function checkOpenCodeKey(
+/** Asks OpenCode for the smallest reply on `model` with `key`, the body left unread. */
+async function askOpenCode(
 	base: string,
 	key: string,
 	model: string,
-): Promise<ConnectRefusal | null> {
+): Promise<Response | "unreachable"> {
 	const response = await fetch(`${base}/responses`, {
 		method: "POST",
 		headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-		body: JSON.stringify({ model, input: "Reply with exactly one word: pong", store: false }),
-	}).catch(() => null);
-	if (!response) return "unavailable";
-	await response.body?.cancel();
-	if (response.status === 401 || response.status === 403) return "rejected";
-	return response.ok ? null : "unavailable";
+		body: JSON.stringify({ model, input: PROBE, store: false }),
+	}).catch(() => "unreachable" as const);
+	if (response !== "unreachable") await response.body?.cancel();
+	return response;
 }
 
 /**
- * One per Ditto account, holding its model connections. The only reader of their keys: a key or
- * ChatGPT sign-in enters once, when the owner connects or imports it, and only a key or access
- * token leaves, in a grant to a Bot for one call, never in an answer to the owner. Every included-model request passes
- * through it too, so it is where a per-account limit would go.
+ * One per Ditto account, holding its model connections. The only reader of their keys: a key
+ * or ChatGPT sign-in enters once, when the owner connects or imports it, and only a key or
+ * access token leaves, in a grant to a Bot for one call, never in an answer to the owner.
+ * Every included-model request passes through it too, so it is where a per-account limit
+ * would go.
  */
 export class Credentials extends DurableObject<AuthEnv> implements CredentialsRpc {
 	/** The ChatGPT access token being read or rotated, which every caller meanwhile shares. */
@@ -227,14 +228,14 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	}
 
 	async view(): Promise<ModelAccessView> {
-		const opencode = await this.ctx.storage.get<StoredConnection>("connection:opencode");
-		const chatgpt = await this.ctx.storage.get<StoredChatGPT>("connection:chatgpt");
+		const opencode = await this.ctx.storage.get<StoredConnection>(connectionKey("opencode"));
+		const chatgpt = await this.ctx.storage.get<StoredChatGPT>(connectionKey("chatgpt"));
 		const included = await this.#includedModel();
-		const troubled = async (id: string) => {
-			const trouble = await this.ctx.storage.get<Trouble>(`trouble:${id}`);
+		const health = async (connectionId: string) => {
+			const stored = await this.ctx.storage.get<StoredFault>(faultKey(connectionId));
 			return {
-				state: trouble?.state ?? ("Connected" as const),
-				...(trouble?.resetsAt ? { resetsAt: trouble.resetsAt } : {}),
+				state: stored?.state ?? ("Connected" as const),
+				...(stored?.resetsAt ? { resetsAt: stored.resetsAt } : {}),
 			};
 		};
 		const connections: ModelAccessView["connections"] = [];
@@ -242,17 +243,17 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 			connections.push({
 				id: "opencode",
 				provider: "opencode",
-				...(await troubled("opencode")),
+				...(await health("opencode")),
 				models: OPENCODE_MODELS,
 			});
 		}
 		// A gate that closed after the import shows the plan as not offered, as before it.
 		if (chatgpt && (await this.offersChatGPT())) {
-			const health = await troubled("chatgpt");
+			const plan = await health("chatgpt");
 			connections.push({
 				id: "chatgpt",
 				provider: "chatgpt",
-				...(this.#rotating && health.state === "Connected" ? { state: "Refreshing" } : health),
+				...(this.#rotating && plan.state === "Connected" ? { state: "Refreshing" } : plan),
 				models: CHATGPT_MODELS,
 			});
 		}
@@ -282,7 +283,6 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	}
 
 	async deployAs(deployment: Deployment): Promise<void> {
-		if (this.env.TEST_HOOKS !== "on") throw new Error("Test stage only");
 		await this.ctx.storage.put("test:deployment", deployment);
 	}
 
@@ -304,19 +304,11 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 			connectedAt: new Date().toISOString(),
 		};
 		// A second import replaces the first whole, its refresh token included.
-		await this.ctx.storage.put("connection:chatgpt", connection);
+		await this.ctx.storage.put(connectionKey("chatgpt"), connection);
 		// A fresh sign-in, so whatever the old one left waiting carries on.
-		const trouble = await this.ctx.storage.get<Trouble>("trouble:chatgpt");
-		if (trouble) {
-			await this.ctx.storage.delete("trouble:chatgpt");
-			void this.#wake({ ...trouble, accountId });
-		}
-		if (!(await this.ctx.storage.get("defaultPair"))) {
-			await this.ctx.storage.put("defaultPair", {
-				connectionId: "chatgpt",
-				model: CHATGPT_MODELS[0],
-			});
-		}
+		await this.#clearFault("chatgpt");
+		const [model] = CHATGPT_MODELS;
+		if (model) await this.#defaultIfNone({ connectionId: "chatgpt", model });
 		return "imported";
 	}
 
@@ -342,6 +334,13 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		const chosen = await this.ctx.storage.get<Pair>("defaultPair");
 		if (chosen?.connectionId !== INCLUDED) return chosen ?? null;
 		return included ? { connectionId: INCLUDED, model: included.name } : null;
+	}
+
+	/** The first pair connected becomes the default. */
+	async #defaultIfNone(pair: Pair): Promise<void> {
+		if (!(await this.ctx.storage.get("defaultPair"))) {
+			await this.ctx.storage.put("defaultPair", pair);
+		}
 	}
 
 	async included(body: string): Promise<Response> {
@@ -383,7 +382,6 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	}
 
 	async offerIncluded(offered: boolean): Promise<void> {
-		if (this.env.TEST_HOOKS !== "on") throw new Error("Test stage only");
 		await this.ctx.storage.put("test:includedOffered", offered);
 	}
 
@@ -393,24 +391,21 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		model: string,
 	): Promise<{ connected: true } | { refused: ConnectRefusal }> {
 		if (!OPENCODE_MODELS.includes(model)) return { refused: "unknown-model" };
-		const refused = await checkOpenCodeKey(this.env.OPENCODE_BASE_URL ?? OPENCODE, key, model);
-		if (refused) return { refused };
+		const answer = await askOpenCode(this.env.OPENCODE_BASE_URL ?? OPENCODE, key, model);
+		// Only a 401 or 403 means the key itself is refused; any other failure says nothing of it.
+		if (answer !== "unreachable" && (answer.status === 401 || answer.status === 403)) {
+			return { refused: "rejected" };
+		}
+		if (answer === "unreachable" || !answer.ok) return { refused: "unavailable" };
 		const connection: StoredConnection = {
 			provider: "opencode",
 			key: await seal(this.env.CREDENTIALS_ENCRYPTION_KEY, key, `${accountId}:opencode`),
 			connectedAt: new Date().toISOString(),
 		};
-		await this.ctx.storage.put("connection:opencode", connection);
-		// The first pair chosen becomes the default.
-		if (!(await this.ctx.storage.get("defaultPair"))) {
-			await this.ctx.storage.put("defaultPair", { connectionId: "opencode", model });
-		}
+		await this.ctx.storage.put(connectionKey("opencode"), connection);
+		await this.#defaultIfNone({ connectionId: "opencode", model });
 		// A new key answered, so whatever the old one left waiting carries on.
-		const trouble = await this.ctx.storage.get<Trouble>("trouble:opencode");
-		if (trouble) {
-			await this.ctx.storage.delete("trouble:opencode");
-			void this.#wake({ ...trouble, accountId });
-		}
+		await this.#clearFault("opencode");
 		return { connected: true };
 	}
 
@@ -432,16 +427,21 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	}
 
 	async disconnect(connectionId: string): Promise<boolean> {
-		if (!(await this.ctx.storage.delete(`connection:${connectionId}`))) return false;
+		if (!(await this.ctx.storage.delete(connectionKey(connectionId)))) return false;
 		const defaultPair = await this.ctx.storage.get<Pair>("defaultPair");
 		// Left in place, the default would come back to life with the next key connected.
 		if (defaultPair?.connectionId === connectionId) await this.ctx.storage.delete("defaultPair");
-		// Nothing left to probe: a key connected later starts out healthy.
-		const trouble = await this.ctx.storage.get<Trouble>(`trouble:${connectionId}`);
-		await this.ctx.storage.delete(`trouble:${connectionId}`);
-		// Their unfinished turns lost their connection, so they stop holding the bots' queues.
-		if (trouble) void this.#wake(trouble);
+		// Nothing left to probe, and the bots' unfinished turns stop holding their queues.
+		await this.#clearFault(connectionId);
 		return true;
+	}
+
+	/** Forgets the source's fault, and wakes the bots that waited on it. */
+	async #clearFault(connectionId: string): Promise<void> {
+		const stored = await this.ctx.storage.get<StoredFault>(faultKey(connectionId));
+		if (!stored) return;
+		await this.ctx.storage.delete(faultKey(connectionId));
+		void this.#wake(stored);
 	}
 
 	async grant(accountId: string, pair: Pair | null): Promise<Grant> {
@@ -451,12 +451,12 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		if (wanted?.connectionId === INCLUDED) {
 			if (!included) return { refused: "no-model" };
 			const granted = { connectionId: INCLUDED, model: included.name };
-			const trouble = await this.ctx.storage.get<Trouble>(`trouble:${INCLUDED}`);
-			if (trouble) return { refused: "interrupted", pair: granted, fault: faultIn(trouble) };
+			const stored = await this.ctx.storage.get<StoredFault>(faultKey(INCLUDED));
+			if (stored) return { refused: "interrupted", pair: granted, fault: bare(stored) };
 			return { pair: granted, included: included.id };
 		}
 		if (wanted?.connectionId === "chatgpt") return this.#grantChatGPT(accountId, wanted);
-		const opencode = await this.ctx.storage.get<StoredConnection>("connection:opencode");
+		const opencode = await this.ctx.storage.get<StoredConnection>(connectionKey("opencode"));
 		if (
 			wanted?.connectionId !== "opencode" ||
 			!opencode ||
@@ -465,8 +465,8 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 			return { refused: "no-model" };
 		}
 		const granted = { connectionId: wanted.connectionId, model: wanted.model };
-		const trouble = await this.ctx.storage.get<Trouble>(`trouble:${granted.connectionId}`);
-		if (trouble) return { refused: "interrupted", pair: granted, fault: faultIn(trouble) };
+		const stored = await this.ctx.storage.get<StoredFault>(faultKey(granted.connectionId));
+		if (stored) return { refused: "interrupted", pair: granted, fault: bare(stored) };
 		const key = await open(
 			this.env.CREDENTIALS_ENCRYPTION_KEY,
 			opencode.key,
@@ -475,26 +475,15 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		return { pair: granted, credential: { type: "api_key", key } };
 	}
 
-	async interrupted(
-		accountId: string,
-		botId: string,
-		pair: Pair,
-		fault?: Fault,
-	): Promise<Fault | null> {
-		return this.#troubled(accountId, botId, pair, fault);
-	}
-
-	/** Records `fault` on `pair`'s connection, and `botId` as waiting on it when one is given. */
-	async #troubled(
+	async recordFault(
 		accountId: string,
 		botId: string | null,
 		pair: Pair,
 		fault?: Fault,
 	): Promise<Fault | null> {
-		const name = `trouble:${pair.connectionId}`;
-		const known = await this.ctx.storage.get<Trouble>(name);
+		const known = await this.ctx.storage.get<StoredFault>(faultKey(pair.connectionId));
 		if (!known && !fault) return null;
-		const trouble: Trouble = known ?? {
+		const stored: StoredFault = known ?? {
 			state: "Throttled",
 			accountId,
 			model: pair.model,
@@ -504,78 +493,77 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		};
 		if (fault) {
 			// A reset time belongs to the limit that gave it.
-			if (fault.state !== trouble.state) delete trouble.resetsAt;
-			trouble.state = fault.state;
-			if (fault.resetsAt) trouble.resetsAt = fault.resetsAt;
+			if (fault.state !== stored.state) delete stored.resetsAt;
+			stored.state = fault.state;
+			if (fault.resetsAt) stored.resetsAt = fault.resetsAt;
 		}
-		if (botId && !trouble.bots.includes(botId)) trouble.bots.push(botId);
-		if (!known) trouble.probeAt = nextProbe(0, trouble.resetsAt);
-		await this.ctx.storage.put(name, trouble);
+		if (botId && !stored.bots.includes(botId)) stored.bots.push(botId);
+		if (!known) stored.probeAt = nextProbe(0, stored.resetsAt);
+		await this.ctx.storage.put(faultKey(pair.connectionId), stored);
 		await this.#schedule();
-		return faultIn(trouble);
+		return bare(stored);
 	}
 
 	async check(accountId: string, connectionId: string): Promise<ConnectionState | null> {
 		const exists =
 			connectionId === INCLUDED
 				? await this.#includedModel()
-				: await this.ctx.storage.get(`connection:${connectionId}`);
+				: await this.ctx.storage.get(connectionKey(connectionId));
 		if (!exists) return null;
-		const name = `trouble:${connectionId}`;
-		const trouble = await this.ctx.storage.get<Trouble>(name);
-		if (!trouble) return "Connected";
+		const stored = await this.ctx.storage.get<StoredFault>(faultKey(connectionId));
+		if (!stored) return "Connected";
 		// A refused key stays refused: asking again would only send it once more.
-		if (trouble.state === "ReconnectNeeded") return trouble.state;
-		const { state } = await this.#probeOnce(name, { ...trouble, accountId });
+		if (stored.state === "ReconnectNeeded") return stored.state;
+		const { state } = await this.#probeOnce(connectionId, { ...stored, accountId });
 		await this.#schedule();
 		return state;
 	}
 
-	/** Probes each connection in trouble that is due, and wakes its bots once one answers. */
+	/** Probes each source with a fault that is due, and wakes its bots once one answers. */
 	override async alarm(): Promise<void> {
-		const troubles = await this.ctx.storage.list<Trouble>({ prefix: "trouble:" });
-		for (const [name, trouble] of troubles) {
-			if (!probed(trouble) || trouble.probeAt > Date.now()) continue;
-			const { woken } = await this.#probeOnce(name, trouble);
+		const faults = await this.ctx.storage.list<StoredFault>({ prefix: faultKey("") });
+		for (const [name, stored] of faults) {
+			if (!probed(stored) || stored.probeAt > Date.now()) continue;
+			const { woken } = await this.#probeOnce(name.slice(faultKey("").length), stored);
 			await woken;
 		}
 		await this.#schedule();
 	}
 
 	/**
-	 * Asks the provider once. An answer clears the trouble and wakes its bots; otherwise the
+	 * Asks the provider once. An answer clears the fault and wakes its bots; otherwise the
 	 * fault it names, if any, replaces the old one and the next probe moves further out.
 	 */
 	async #probeOnce(
-		name: string,
-		trouble: Trouble,
+		connectionId: string,
+		stored: StoredFault,
 	): Promise<{ state: ConnectionState; woken?: Promise<void> }> {
-		const fault =
-			name === "trouble:chatgpt"
-				? await this.#probeChatGPT(trouble)
+		const outcome =
+			connectionId === "chatgpt"
+				? await this.#probeChatGPT(stored)
 				: answered(
-						name === `trouble:${INCLUDED}`
-							? await this.#probeIncluded(trouble)
-							: await this.#probe(trouble),
+						connectionId === INCLUDED
+							? await this.#probeIncluded(stored)
+							: await this.#probeOpenCode(stored),
 					);
-		if (fault === "ok") {
-			await this.ctx.storage.delete(name);
-			return { state: "Connected", woken: this.#wake(trouble) };
+		if (outcome === "ok") {
+			await this.ctx.storage.delete(faultKey(connectionId));
+			return { state: "Connected", woken: this.#wake(stored) };
 		}
-		if (fault && fault.state !== trouble.state) delete trouble.resetsAt;
-		if (fault) Object.assign(trouble, fault);
-		trouble.attempt += 1;
-		trouble.probeAt = nextProbe(trouble.attempt, trouble.resetsAt);
-		await this.ctx.storage.put(name, trouble);
-		return { state: trouble.state };
+		if (outcome && outcome.state !== stored.state) delete stored.resetsAt;
+		if (outcome) Object.assign(stored, outcome);
+		stored.attempt += 1;
+		stored.probeAt = nextProbe(stored.attempt, stored.resetsAt);
+		await this.ctx.storage.put(faultKey(connectionId), stored);
+		return { state: stored.state };
 	}
 
-	/** Tells each bot with work waiting on the connection that it answers again. */
-	#wake(trouble: Trouble): Promise<void> {
+	/** Tells each bot with work waiting on the source that it answers again. */
+	#wake(stored: StoredFault): Promise<void> {
 		const woken = Promise.all(
-			trouble.bots.map((botId) =>
+			stored.bots.map((botId) =>
 				this.#bot(botId)
-					.recover(trouble.accountId)
+					.recover(stored.accountId)
 					.catch((error: unknown) => console.error("A bot didn’t recover:", error)),
 			),
 		).then(() => {});
@@ -583,45 +571,31 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		return woken;
 	}
 
-	/** Sets the alarm for the soonest probe due, while any connection is in trouble. */
+	/** Sets the alarm for the soonest probe due, while any source has a fault. */
 	async #schedule(): Promise<void> {
-		const troubles = await this.ctx.storage.list<Trouble>({ prefix: "trouble:" });
-		const due = Math.min(
-			...[...troubles.values()].filter(probed).map((trouble) => trouble.probeAt),
-		);
+		const faults = await this.ctx.storage.list<StoredFault>({ prefix: faultKey("") });
+		const due = Math.min(...[...faults.values()].filter(probed).map((stored) => stored.probeAt));
 		if (Number.isFinite(due)) await this.ctx.storage.setAlarm(due);
 		else await this.ctx.storage.deleteAlarm();
 	}
 
-	/** Asks the provider for the smallest reply with the stored key. Null without a key to send. */
-	async #probe(trouble: Trouble): Promise<Response | "unreachable" | null> {
-		const opencode = await this.ctx.storage.get<StoredConnection>("connection:opencode");
+	/** The probe on OpenCode, with the stored key. Null without a key to send. */
+	async #probeOpenCode(stored: StoredFault): Promise<Response | "unreachable" | null> {
+		const opencode = await this.ctx.storage.get<StoredConnection>(connectionKey("opencode"));
 		if (!opencode) return null;
 		const key = await open(
 			this.env.CREDENTIALS_ENCRYPTION_KEY,
 			opencode.key,
-			`${trouble.accountId}:opencode`,
+			`${stored.accountId}:opencode`,
 		);
-		const response = await fetch(`${this.env.OPENCODE_BASE_URL ?? OPENCODE}/responses`, {
-			method: "POST",
-			headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-			body: JSON.stringify({
-				model: trouble.model,
-				input: "Reply with exactly one word: pong",
-				store: false,
-			}),
-		}).catch(() => "unreachable" as const);
-		if (response !== "unreachable") await response.body?.cancel();
-		return response;
+		return askOpenCode(this.env.OPENCODE_BASE_URL ?? OPENCODE, key, stored.model);
 	}
 
 	/** The same probe on the included model, through the account's own gateway route. */
-	async #probeIncluded(trouble: Trouble): Promise<Response | "unreachable" | null> {
+	async #probeIncluded(stored: StoredFault): Promise<Response | "unreachable" | null> {
 		if (!(await this.#includedModel())) return null;
-		const body = JSON.stringify({
-			messages: [{ role: "user", content: "Reply with exactly one word: pong" }],
-		});
-		const response = await this.#sendIncluded(trouble.accountId, body).catch(
+		const body = JSON.stringify({ messages: [{ role: "user", content: PROBE }] });
+		const response = await this.#sendIncluded(stored.accountId, body).catch(
 			() => "unreachable" as const,
 		);
 		if (response !== "unreachable") await response.body?.cancel();
@@ -632,20 +606,20 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	 * The same probe on the ChatGPT plan, within the flow's rules: stored nowhere, streamed. An
 	 * expired token is rotated first, so a failed rotation is retried by these probes too.
 	 */
-	async #probeChatGPT(trouble: Trouble): Promise<"ok" | Fault | null> {
+	async #probeChatGPT(stored: StoredFault): Promise<"ok" | Fault | null> {
 		// Not offered any more: nothing goes to OpenAI until the gate opens again.
 		if (!(await this.offersChatGPT())) return null;
 		let refused: string | undefined;
 		for (;;) {
-			const token = await this.#chatgptToken(trouble.accountId, refused);
+			const token = await this.#chatgptToken(stored.accountId, refused);
 			if (!token) return null;
 			if ("fault" in token) return token.fault;
 			const response = await openaiFetch(this.env.OAUTH_UPSTREAM)(OPENAI_RESPONSES, {
 				method: "POST",
 				headers: { authorization: `Bearer ${token.access}`, "content-type": "application/json" },
 				body: JSON.stringify({
-					model: trouble.model,
-					input: [{ role: "user", content: "Reply with exactly one word: pong" }],
+					model: stored.model,
+					input: [{ role: "user", content: PROBE }],
 					store: false,
 					stream: true,
 				}),
@@ -685,7 +659,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	}
 
 	async #currentChatGPT(accountId: string, refused?: string): Promise<Access | null> {
-		const chatgpt = await this.ctx.storage.get<StoredChatGPT>("connection:chatgpt");
+		const chatgpt = await this.ctx.storage.get<StoredChatGPT>(connectionKey("chatgpt"));
 		if (!chatgpt) return null;
 		const scope = `${accountId}:chatgpt`;
 		const signIn = JSON.parse(
@@ -711,7 +685,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 				}),
 			}).catch(() => "unreachable" as const);
 			// A disconnect or a newer import while the rotation was out wins over its answer.
-			const current = await this.ctx.storage.get<StoredChatGPT>("connection:chatgpt");
+			const current = await this.ctx.storage.get<StoredChatGPT>(connectionKey("chatgpt"));
 			if (current?.signIn.iv !== chatgpt.signIn.iv) {
 				if (answer !== "unreachable") await answer.body?.cancel().catch(() => {});
 				return current ? this.#currentChatGPT(accountId, refused) : null;
@@ -726,7 +700,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 				return { fault: faultOf(answer) ?? { state: "ReconnectNeeded" } };
 			}
 			// The old refresh token is spent now, so the replacement is saved before anyone hears.
-			await this.ctx.storage.put("connection:chatgpt", {
+			await this.ctx.storage.put(connectionKey("chatgpt"), {
 				...chatgpt,
 				signIn: await seal(this.env.CREDENTIALS_ENCRYPTION_KEY, JSON.stringify(next), scope),
 				expires: next.expires,
@@ -746,7 +720,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	}
 
 	async evictAfterRotation(): Promise<void> {
-		if (this.env.TEST_HOOKS === "on") await this.ctx.storage.put("test:evictAfterRotation", true);
+		await this.ctx.storage.put("test:evictAfterRotation", true);
 	}
 
 	/**
@@ -764,21 +738,21 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 
 	/**
 	 * Hands out the access token alone, rotated first if it expired: the refresh token never
-	 * leaves this object. A failed rotation puts the plan in trouble, as a failed turn would.
+	 * leaves this object. A failed rotation is the plan's fault, as a failed turn's would be.
 	 */
 	async #grantChatGPT(accountId: string, wanted: Pair): Promise<Grant> {
-		const chatgpt = await this.ctx.storage.get<StoredChatGPT>("connection:chatgpt");
+		const chatgpt = await this.ctx.storage.get<StoredChatGPT>(connectionKey("chatgpt"));
 		// A gate that closed after the import closes the plan too.
 		if (!chatgpt || !CHATGPT_MODELS.includes(wanted.model) || !(await this.offersChatGPT())) {
 			return { refused: "no-model" };
 		}
 		const granted = { connectionId: wanted.connectionId, model: wanted.model };
-		const trouble = await this.ctx.storage.get<Trouble>("trouble:chatgpt");
-		if (trouble) return { refused: "interrupted", pair: granted, fault: faultIn(trouble) };
+		const stored = await this.ctx.storage.get<StoredFault>(faultKey("chatgpt"));
+		if (stored) return { refused: "interrupted", pair: granted, fault: bare(stored) };
 		const token = await this.#chatgptToken(accountId);
 		if (!token) return { refused: "no-model" };
 		if ("fault" in token) {
-			const fault = (await this.#troubled(accountId, null, granted, token.fault)) ?? token.fault;
+			const fault = (await this.recordFault(accountId, null, granted, token.fault)) ?? token.fault;
 			return { refused: "interrupted", pair: granted, fault };
 		}
 		return { pair: granted, credential: { type: "api_key", key: token.access } };

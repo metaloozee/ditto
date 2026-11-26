@@ -41,7 +41,7 @@ export type Grant =
 	/** The included model, by its Workers AI ID. No credential: requests go through `included()`. */
 	| { pair: Pair; included: string }
 	| { refused: "no-model" }
-	/** The pair's connection is in trouble, so the turn waits for it instead of calling. */
+	/** The pair's source has a fault, so the turn waits for it instead of calling. */
 	| { refused: "interrupted"; pair: Pair; fault: Fault };
 
 export interface CredentialsRpc {
@@ -89,13 +89,18 @@ export interface CredentialsRpc {
 	 */
 	included(body: string): Promise<Response>;
 	/**
-	 * Records that `botId` has work waiting on `pair`'s connection, and the `fault` it met if
-	 * it met one. The object probes the provider with backoff and calls the bot's `recover`
-	 * once it answers. Answers the connection's fault, or null when it's healthy.
+	 * Records the `fault` a call on `pair` met, if it met one, and `botId` as having work
+	 * waiting on that source. The object probes the provider with backoff and calls each
+	 * waiting bot's `recover` once it answers. Answers the source's fault, or null without one.
 	 */
-	interrupted(accountId: string, botId: string, pair: Pair, fault?: Fault): Promise<Fault | null>;
+	recordFault(
+		accountId: string,
+		botId: string | null,
+		pair: Pair,
+		fault?: Fault,
+	): Promise<Fault | null>;
 	/**
-	 * Probes a connection in trouble once, now, and answers its state afterwards; recovery
+	 * Probes a connection with a fault once, now, and answers its state afterwards; recovery
 	 * wakes its bots as a scheduled probe would. A ReconnectNeeded key is never sent again, so
 	 * that state answers without a probe. Null when the account has no such connection.
 	 */

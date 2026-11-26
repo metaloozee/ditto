@@ -337,7 +337,7 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 
 	/**
 	 * Queues `message` behind the waiting work, then tries to recover: that registers the bot
-	 * with Credentials if the connection is still in trouble, and runs the work if it isn't.
+	 * with Credentials while the connection still has a fault, and runs the work once it has none.
 	 */
 	async #enqueue(accountId: string, message: string): Promise<{ queued: string }> {
 		const queued: Queued = { id: crypto.randomUUID(), message, queuedAt: new Date().toISOString() };
@@ -365,9 +365,9 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 			const pair = unfinished?.pair ?? (await this.ctx.storage.get<Pair>("override")) ?? null;
 			const grant = await this.#grant(accountId, pair);
 			if ("refused" in grant) {
-				// Still in trouble: Credentials wakes the bot again.
+				// Still faulted: Credentials wakes the bot again.
 				if (grant.refused === "interrupted") {
-					await credentials.interrupted(accountId, this.#botId, grant.pair);
+					await credentials.recordFault(accountId, this.#botId, grant.pair);
 					return;
 				}
 				// Its connection is gone: the turn stays interrupted and no longer holds the queue.
@@ -521,7 +521,7 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		await this.ctx.storage.put(`turn:${turn.id}`, turn);
 		if (fault) {
 			await this.ctx.storage.put("unfinished", turn.id);
-			await this.#credentials(accountId).interrupted(accountId, this.#botId, turn.pair, fault);
+			await this.#credentials(accountId).recordFault(accountId, this.#botId, turn.pair, fault);
 		} else {
 			await this.ctx.storage.delete("unfinished");
 		}

@@ -54,7 +54,7 @@ export interface BotRpc {
 	 * SSE stream of `TurnEvent`s.
 	 * Refuses before any upstream call when the bot's pair names no usable connection, even
 	 * behind waiting work. Otherwise queues the message while a turn waits on its connection, or
-	 * its connection is in trouble.
+	 * its connection has a fault.
 	 */
 	send(
 		accountId: string,
