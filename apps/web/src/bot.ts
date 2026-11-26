@@ -286,12 +286,18 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 	): Promise<Ended> {
 		let status: Ended;
 		let fault: Fault | null = null;
-		// The provider's last answer, which says whether a failed call met a limit.
-		const seen: { answer: Response | null } = { answer: null };
+		// The provider's last answer, which says whether a failed call met a limit, an outage or
+		// a refused key.
+		const seen: { answer: Response | "unreachable" | null } = { answer: null };
 		const observed = async (input: RequestInfo | URL, init?: RequestInit) => {
-			const response = await fetch(input, init);
-			seen.answer = response;
-			return response;
+			try {
+				const response = await fetch(input, init);
+				seen.answer = response;
+				return response;
+			} catch (error) {
+				if (!signal.aborted) seen.answer = "unreachable";
+				throw error;
+			}
 		};
 		try {
 			const credentials = new InMemoryCredentialStore();
@@ -335,7 +341,8 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 							: []),
 					],
 				},
-				{ signal, fetch: observed },
+				// One request per attempt: Credentials backs off with its probes, not Pi.
+				{ signal, fetch: observed, maxRetries: 0 },
 			);
 			for await (const event of events) {
 				if (event.type !== "text_delta") continue;

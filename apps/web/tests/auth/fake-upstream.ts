@@ -140,6 +140,8 @@ export async function startFakeUpstream() {
 	// Keys whose streamed turn the caller hung up on before it completed.
 	const openCodeHungUp: string[] = [];
 	const openCodeLimits = new Map<string, OpenCodeLimit>();
+	// Keys whose every request meets an outage: 503 until it ends.
+	const openCodeDown = new Set<string>();
 	// What each Responses request asked, beside the key it named.
 	const openCodeAsked: { key: string | null; text: string | null }[] = [];
 	// Held turns by key, each finishing its stream when released.
@@ -243,6 +245,16 @@ export async function startFakeUpstream() {
 			else openCodeLimits.delete(key);
 			return json(204, null);
 		}
+		if (url.pathname === "/__opencode/down" && (req.method === "POST" || req.method === "DELETE")) {
+			const { key } = JSON.parse(await body(req)) as { key: string };
+			if (req.method === "POST") openCodeDown.add(key);
+			else openCodeDown.delete(key);
+			return json(204, null);
+		}
+		if (req.method === "POST" && url.pathname === "/__opencode/revoke") {
+			openCodeKeys.delete((JSON.parse(await body(req)) as { key: string }).key);
+			return json(204, null);
+		}
 		if (req.method === "POST" && url.pathname === "/__opencode/release") {
 			const { key } = JSON.parse(await body(req)) as { key: string };
 			const held = openCodeHeld.get(key) ?? [];
@@ -261,6 +273,9 @@ export async function startFakeUpstream() {
 			openCodeAsked.push({ key, text: askedText(input) });
 			const fault = openCodeFaults.shift();
 			if (fault) return json(fault.status, fault.body ?? { error: { message: "Simulated" } });
+			if (key && openCodeDown.has(key)) {
+				return json(503, { error: { type: "server_error", message: "Service unavailable." } });
+			}
 			if (!key || !openCodeKeys.has(key)) {
 				return json(401, { error: { type: "AuthError", message: "Invalid API key." } });
 			}

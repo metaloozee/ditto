@@ -14,8 +14,13 @@ import { toast } from "#/components/ui/toast.tsx";
 import { WorkspaceFailed, WorkspacePending, WorkspaceView } from "#/components/workspace.tsx";
 import { useSignOut } from "#/lib/auth-client.ts";
 import { chooseBotOverride, getBotOverride } from "#/lib/bot-model.ts";
-import { accessOf, getModelAccess, readModelAccess } from "#/lib/model-access-api.ts";
-import { canMessage, type ModelAccess, type Pair } from "#/lib/model-access.ts";
+import {
+	accessOf,
+	checkConnection,
+	getModelAccess,
+	readModelAccess,
+} from "#/lib/model-access-api.ts";
+import { canMessage, type Interruption, type ModelAccess, type Pair } from "#/lib/model-access.ts";
 import { pendingTurns, resumeTurn, sendTurn, stopTurn } from "#/lib/turn.ts";
 import { getSidebarPinned, openWorkspace } from "#/lib/workspace.ts";
 
@@ -240,6 +245,11 @@ function Home() {
 								access={access}
 								botPair={override ?? view.defaultPair ?? undefined}
 								onResume={(pair) => void resume(exchange, pair)}
+								onCheck={async (connectionId) => {
+									await checkConnection(connectionId);
+									const latest = await readModelAccess();
+									if (latest) setView(latest);
+								}}
 							/>
 						))
 					: undefined
@@ -253,12 +263,14 @@ function ExchangeBubbles({
 	access,
 	botPair,
 	onResume,
+	onCheck,
 }: {
 	exchange: Exchange;
 	access: ModelAccess;
 	/** The pair the bot would start a turn on now: its override, else the default. */
 	botPair: Pair | undefined;
 	onResume: (pair: Pair) => void;
+	onCheck: (connectionId: string) => Promise<void>;
 }) {
 	if (exchange.status === "queued") return <QueuedBubble>{exchange.message}</QueuedBubble>;
 	const ended = ENDED[exchange.status];
@@ -279,14 +291,34 @@ function ExchangeBubbles({
 					key={exchange.refusals ?? 0}
 					access={access}
 					// Carried on once it runs again, on its own pair or the one it was resumed on.
-					interruption={exchange.status === "interrupted" ? exchange.interruption : "Settled"}
+					interruption={
+						exchange.status === "interrupted"
+							? waitingOn(access, exchange.pair, exchange.interruption)
+							: "Settled"
+					}
 					turnPair={exchange.pair}
 					defaultPair={botPair}
 					onResume={onResume}
+					onCheck={() => onCheck(exchange.pair?.connectionId ?? "")}
 				/>
 			)}
 		</>
 	);
+}
+
+/**
+ * What an interrupted turn waits on: its connection as it is now, which a probe may have
+ * changed since (an outage found to be a refused key), or what stopped it.
+ */
+function waitingOn(
+	access: ModelAccess,
+	pair: Pair,
+	stoppedBy: Exclude<Interruption, "Settled">,
+): Exclude<Interruption, "Settled"> {
+	const state = access.connections.find((each) => each.id === pair.connectionId)?.state;
+	return state === "Throttled" || state === "Unavailable" || state === "ReconnectNeeded"
+		? state
+		: stoppedBy;
 }
 
 function Failed() {

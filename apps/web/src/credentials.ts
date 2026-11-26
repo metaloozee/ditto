@@ -9,7 +9,7 @@ import type {
 	ModelAccessView,
 } from "./credentials-rpc.ts";
 import type { AuthEnv } from "./lib/auth.ts";
-import { OPENCODE_MODELS, type Pair } from "./lib/model-access.ts";
+import { type ConnectionState, OPENCODE_MODELS, type Pair } from "./lib/model-access.ts";
 import { faultOf } from "./lib/provider-fault.ts";
 
 const OPENCODE = "https://opencode.ai/inference/openai/v1";
@@ -49,6 +49,9 @@ function nextProbe(attempt: number, resetsAt: string | undefined, now = Date.now
 	const backoff = Math.min(PROBE_BASE_MS * 2 ** attempt, PROBE_MAX_MS);
 	return Math.max(now + backoff, resetsAt ? Date.parse(resetsAt) : 0);
 }
+
+/** Whether the connection is probed: a refused key waits for the owner to reconnect instead. */
+const probed = (trouble: Trouble) => trouble.state !== "ReconnectNeeded";
 
 const faultIn = ({ state, resetsAt }: Trouble): Fault =>
 	resetsAt ? { state, resetsAt } : { state };
@@ -152,6 +155,12 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		if (!(await this.ctx.storage.get("defaultPair"))) {
 			await this.ctx.storage.put("defaultPair", { connectionId: "opencode", model });
 		}
+		// A new key answered, so whatever the old one left waiting carries on.
+		const trouble = await this.ctx.storage.get<Trouble>("trouble:opencode");
+		if (trouble) {
+			await this.ctx.storage.delete("trouble:opencode");
+			void this.#wake({ ...trouble, accountId });
+		}
 		return { connected: true };
 	}
 
@@ -215,6 +224,8 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 			bots: [],
 		};
 		if (fault) {
+			// A reset time belongs to the limit that gave it.
+			if (fault.state !== trouble.state) delete trouble.resetsAt;
 			trouble.state = fault.state;
 			if (fault.resetsAt) trouble.resetsAt = fault.resetsAt;
 		}
@@ -225,42 +236,76 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		return faultIn(trouble);
 	}
 
+	async check(accountId: string, connectionId: string): Promise<ConnectionState | null> {
+		if (!(await this.ctx.storage.get(`connection:${connectionId}`))) return null;
+		const name = `trouble:${connectionId}`;
+		const trouble = await this.ctx.storage.get<Trouble>(name);
+		if (!trouble) return "Connected";
+		// A refused key stays refused: asking again would only send it once more.
+		if (trouble.state === "ReconnectNeeded") return trouble.state;
+		const { state } = await this.#probeOnce(name, { ...trouble, accountId });
+		await this.#schedule();
+		return state;
+	}
+
 	/** Probes each connection in trouble that is due, and wakes its bots once one answers. */
 	override async alarm(): Promise<void> {
 		const troubles = await this.ctx.storage.list<Trouble>({ prefix: "trouble:" });
 		for (const [name, trouble] of troubles) {
-			if (trouble.probeAt > Date.now()) continue;
-			const answer = await this.#probe(trouble);
-			if (answer?.ok) {
-				await this.ctx.storage.delete(name);
-				await Promise.all(
-					trouble.bots.map((botId) =>
-						this.#bot(botId)
-							.recover(trouble.accountId)
-							.catch((error: unknown) => console.error("A bot didn’t recover:", error)),
-					),
-				);
-				continue;
-			}
-			// No answer, or one that names no fault, keeps the state the connection had.
-			const fault = faultOf(answer);
-			if (fault) Object.assign(trouble, fault);
-			trouble.attempt += 1;
-			trouble.probeAt = nextProbe(trouble.attempt, trouble.resetsAt);
-			await this.ctx.storage.put(name, trouble);
+			if (!probed(trouble) || trouble.probeAt > Date.now()) continue;
+			const { woken } = await this.#probeOnce(name, trouble);
+			await woken;
 		}
 		await this.#schedule();
+	}
+
+	/**
+	 * Asks the provider once. An answer clears the trouble and wakes its bots; otherwise the
+	 * fault it names, if any, replaces the old one and the next probe moves further out.
+	 */
+	async #probeOnce(
+		name: string,
+		trouble: Trouble,
+	): Promise<{ state: ConnectionState; woken?: Promise<void> }> {
+		const answer = await this.#probe(trouble);
+		if (answer !== "unreachable" && answer?.ok) {
+			await this.ctx.storage.delete(name);
+			return { state: "Connected", woken: this.#wake(trouble) };
+		}
+		const fault = faultOf(answer);
+		if (fault && fault.state !== trouble.state) delete trouble.resetsAt;
+		if (fault) Object.assign(trouble, fault);
+		trouble.attempt += 1;
+		trouble.probeAt = nextProbe(trouble.attempt, trouble.resetsAt);
+		await this.ctx.storage.put(name, trouble);
+		return { state: trouble.state };
+	}
+
+	/** Tells each bot with work waiting on the connection that it answers again. */
+	#wake(trouble: Trouble): Promise<void> {
+		const woken = Promise.all(
+			trouble.bots.map((botId) =>
+				this.#bot(botId)
+					.recover(trouble.accountId)
+					.catch((error: unknown) => console.error("A bot didn’t recover:", error)),
+			),
+		).then(() => {});
+		this.ctx.waitUntil(woken);
+		return woken;
 	}
 
 	/** Sets the alarm for the soonest probe due, while any connection is in trouble. */
 	async #schedule(): Promise<void> {
 		const troubles = await this.ctx.storage.list<Trouble>({ prefix: "trouble:" });
-		const due = Math.min(...[...troubles.values()].map((trouble) => trouble.probeAt));
+		const due = Math.min(
+			...[...troubles.values()].filter(probed).map((trouble) => trouble.probeAt),
+		);
 		if (Number.isFinite(due)) await this.ctx.storage.setAlarm(due);
+		else await this.ctx.storage.deleteAlarm();
 	}
 
-	/** Asks the provider for the smallest reply with the stored key. Null when it didn't answer. */
-	async #probe(trouble: Trouble): Promise<Response | null> {
+	/** Asks the provider for the smallest reply with the stored key. Null without a key to send. */
+	async #probe(trouble: Trouble): Promise<Response | "unreachable" | null> {
 		const opencode = await this.ctx.storage.get<StoredConnection>("connection:opencode");
 		if (!opencode) return null;
 		const key = await open(
@@ -276,8 +321,8 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 				input: "Reply with exactly one word: pong",
 				store: false,
 			}),
-		}).catch(() => null);
-		await response?.body?.cancel();
+		}).catch(() => "unreachable" as const);
+		if (response !== "unreachable") await response.body?.cancel();
 		return response;
 	}
 

@@ -1,6 +1,6 @@
 // The Credentials object's RPC surface, kept free of Worker imports like `workspace-rpc.ts`.
 
-import type { Connection, Interruption, Pair } from "./lib/model-access.ts";
+import type { Connection, ConnectionState, Interruption, Pair } from "./lib/model-access.ts";
 
 /**
  * What an account's model access looks like to its owner. Never carries a key. A limit's
@@ -53,6 +53,12 @@ export interface CredentialsRpc {
 	 * once it answers. Answers the connection's fault, or null when it's healthy.
 	 */
 	interrupted(accountId: string, botId: string, pair: Pair, fault?: Fault): Promise<Fault | null>;
+	/**
+	 * Probes a connection in trouble once, now, and answers its state afterwards; recovery
+	 * wakes its bots as a scheduled probe would. A ReconnectNeeded key is never sent again, so
+	 * that state answers without a probe. Null when the account has no such connection.
+	 */
+	check(accountId: string, connectionId: string): Promise<ConnectionState | null>;
 	/** Test stage only: everything the object stores, exactly as stored. */
 	stored(): Promise<Record<string, unknown>>;
 }
