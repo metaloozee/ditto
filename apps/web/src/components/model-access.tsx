@@ -19,7 +19,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Link } from "@tanstack/react-router";
 import { cn } from "cn";
 import { Ring } from "loading-dev";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { shake } from "#/components/auth.tsx";
 import { BrandIcon } from "#/components/brand-icons.tsx";
@@ -144,6 +144,7 @@ export function PairSelect({
 		<Popover.Root open={open} onOpenChange={setOpen}>
 			<Popover.Trigger
 				{...labelling}
+				title={value ? pairLabel(access, value) : undefined}
 				className={cn(
 					"flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg field ps-2.5 pe-2 text-start text-sm transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-popup-open:border-ring/60",
 					className,
@@ -155,7 +156,7 @@ export function PairSelect({
 						<span className="min-w-0 flex-1 truncate">{pairLabel(access, value)}</span>
 					</>
 				) : (
-					<span className="flex-1 text-muted-foreground">Choose a model</span>
+					<span className="min-w-0 flex-1 truncate text-muted-foreground">Choose a model</span>
 				)}
 				<HugeiconsIcon icon={UnfoldMoreIcon} className="size-4 shrink-0 text-muted-foreground" />
 			</Popover.Trigger>
@@ -226,6 +227,27 @@ function PairPicker({
 	const at = Math.min(active, options.length - 1);
 	const optionId = (index: number) => `${id}-option-${index}`;
 	const connection = group ? connectionOf(group.key) : undefined;
+	// A long list opens on the chosen model, and the arrow keys never leave the active one hidden.
+	useEffect(() => {
+		document.getElementById(optionId(at))?.scrollIntoView({ block: "nearest" });
+	}, [at]);
+
+	if (groups.length === 0) {
+		return (
+			<div className="flex flex-1 flex-col items-start gap-1 p-4">
+				<p className="font-medium">No models yet</p>
+				<p className="text-caption text-pretty text-muted-foreground">
+					Connect one in Model access, and its models appear here.
+				</p>
+				<Link
+					to="/settings"
+					className={cn(buttonVariants({ variant: "link", size: "xs" }), "h-auto px-0")}
+				>
+					Open Model access
+				</Link>
+			</div>
+		);
+	}
 
 	return (
 		<>
@@ -351,6 +373,7 @@ function PairPicker({
 								role="option"
 								aria-selected={chosen}
 								data-active={index === at || undefined}
+								title={pair.model}
 								onPointerMove={() => setActive(index)}
 								onClick={() => onPick(pair)}
 								className="flex h-9 shrink-0 cursor-pointer touch-manipulation items-center gap-2 rounded-lg px-2.5 select-none data-active:bg-muted"
@@ -490,6 +513,12 @@ function ProviderTile({ provider }: { provider: ConnectionProvider | "add" }) {
 	);
 }
 
+/** Names up to three models; a longer list ends with how many more. */
+function modelSummary(models: readonly string[]): string {
+	if (models.length <= 3) return models.join(", ");
+	return `${models.slice(0, 3).join(", ")} and ${models.length - 3} more`;
+}
+
 /** One row of the connections card: who, what it says, then its state and one action. */
 function Row({
 	provider,
@@ -513,7 +542,7 @@ function Row({
 			</div>
 			{/* On a phone the state and action wrap under the name, lined up with it. */}
 			{trailing && (
-				<div className="ms-11 flex items-center gap-2 sm:ms-auto max-sm:w-full max-sm:justify-between">
+				<div className="ms-11 flex items-center gap-2 @max-lg:w-full @max-lg:justify-between @lg:ms-auto">
 					{trailing}
 				</div>
 			)}
@@ -541,7 +570,7 @@ function ConnectionRow({
 		<Row
 			provider={connection.provider}
 			title={title}
-			detail={view.detail ?? connection.models.join(", ")}
+			detail={view.detail ?? modelSummary(connection.models)}
 			trailing={
 				<>
 					<StateBadge connection={connection} />
@@ -621,7 +650,7 @@ export function ModelAccessSection({
 	});
 
 	return (
-		<section className="flex flex-col gap-4" aria-labelledby={`${labelId}-heading`}>
+		<section className="@container flex flex-col gap-4" aria-labelledby={`${labelId}-heading`}>
 			<div className="flex flex-col gap-1">
 				<h2 id={`${labelId}-heading`}>Model access</h2>
 				<p className="text-pretty text-muted-foreground">
@@ -639,7 +668,7 @@ export function ModelAccessSection({
 			)}
 			{pickable && (
 				<Card>
-					<CardPanel className="grid gap-x-6 gap-y-2 px-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center">
+					<CardPanel className="grid gap-x-6 gap-y-2 px-4 @md:grid-cols-[8rem_minmax(0,1fr)] @md:items-center">
 						<Label id={labelId} className="text-muted-foreground">
 							Default model
 						</Label>
@@ -666,7 +695,7 @@ export function ModelAccessSection({
 							<Button
 								size="sm"
 								variant="outline"
-								className="max-sm:ms-auto"
+								className="@max-lg:ms-auto"
 								onClick={onConnectChatGPT}
 							>
 								Connect<span className="sr-only"> ChatGPT plan</span>
@@ -896,8 +925,8 @@ export function BotSettings({
 		<div className="flex items-center gap-3">
 			<span className="size-10 shrink-0 *:size-full!">{face}</span>
 			<div className="flex min-w-0 flex-1 flex-col">
-				<DrawerTitle className="truncate font-semibold">{`${name}’s settings`}</DrawerTitle>
-				<span className="truncate text-caption text-muted-foreground">{role}</span>
+				<DrawerTitle className="line-clamp-2 font-semibold text-balance break-words">{`${name}’s settings`}</DrawerTitle>
+				<span className="line-clamp-2 text-caption text-muted-foreground">{role}</span>
 			</div>
 			{!narrow && (
 				<DrawerClose
@@ -1122,12 +1151,16 @@ export function InterruptionCard({
 													return (
 														<Button
 															key="resume"
+															title={`Resume on ${pairLabel(access, action.pair)}`}
+															className="max-w-full shrink"
 															onClick={() => {
 																setSettled(action.pair);
 																onResume?.(action.pair);
 															}}
 														>
-															Resume on {pairLabel(access, action.pair)}
+															<span className="truncate">
+																Resume on {pairLabel(access, action.pair)}
+															</span>
 														</Button>
 													);
 												case "settings":
