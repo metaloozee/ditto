@@ -56,9 +56,7 @@ describe("importing a ChatGPT plan credential", () => {
 		await open(page, "/settings");
 		const section = modelAccess(page);
 		await section.getByText("Connected", { exact: true }).waitFor();
-		await expect(section.getByText("ChatGPT plan", { exact: true }).isVisible()).resolves.toBe(
-			true,
-		);
+		await section.getByRole("button", { name: "Disconnect ChatGPT plan" }).waitFor();
 		const defaultPair = section.getByRole("button", { name: "Default model" });
 		await expect(defaultPair.textContent()).resolves.toBe("gpt-5.6-luna · ChatGPT plan");
 
