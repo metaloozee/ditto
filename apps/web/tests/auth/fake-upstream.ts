@@ -39,8 +39,26 @@ export type OpenCodeFault = { status: number; body?: unknown };
 /**
  * How OpenCode streams its reply to the next turn: these text deltas in order, then the
  * completed response. A held reply sends the deltas and then waits, until the caller hangs up.
+ * A limited reply sends the deltas, then fails on a rate limit, and limits its key from then on.
  */
-export type OpenCodeReply = { deltas: string[]; hold?: boolean };
+export type OpenCodeReply = { deltas: string[]; hold?: boolean; limited?: boolean };
+
+/** A key's limit: every request naming it answers 429, with `retry-after` if set, in seconds. */
+export type OpenCodeLimit = { retryAfter?: number };
+
+/** The text of what a Responses request asked: the last thing the user said in it. */
+function askedText(input: unknown): string | null {
+	if (typeof input === "string") return input;
+	if (!Array.isArray(input)) return null;
+	const last = (input as { role?: unknown; content?: unknown }[])
+		.filter((item) => item.role === "user")
+		.at(-1)?.content;
+	if (typeof last === "string") return last;
+	if (!Array.isArray(last)) return null;
+	return (last as { text?: unknown }[])
+		.map((part) => (typeof part.text === "string" ? part.text : ""))
+		.join("");
+}
 
 const sseEvent = (event: { type: string } & Record<string, unknown>) =>
 	`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
@@ -119,6 +137,9 @@ export async function startFakeUpstream() {
 	const openCodeReplies: OpenCodeReply[] = [];
 	// Keys whose streamed turn the caller hung up on before it completed.
 	const openCodeHungUp: string[] = [];
+	const openCodeLimits = new Map<string, OpenCodeLimit>();
+	// What each Responses request asked, beside the key it named.
+	const openCodeAsked: { key: string | null; text: string | null }[] = [];
 
 	const server = createServer(async (req, res) => {
 		const url = new URL(req.url ?? "/", "http://fake");
@@ -208,17 +229,41 @@ export async function startFakeUpstream() {
 		}
 		if (url.pathname === "/__opencode/requests") return json(200, openCodeRequests);
 		if (url.pathname === "/__opencode/hung-up") return json(200, openCodeHungUp);
+		if (url.pathname === "/__opencode/asked") return json(200, openCodeAsked);
+		if (
+			url.pathname === "/__opencode/limit" &&
+			(req.method === "POST" || req.method === "DELETE")
+		) {
+			const { key, ...limit } = JSON.parse(await body(req)) as { key: string } & OpenCodeLimit;
+			if (req.method === "POST") openCodeLimits.set(key, limit);
+			else openCodeLimits.delete(key);
+			return json(204, null);
+		}
 		if (req.method === "POST" && url.pathname === "/opencode.ai/inference/openai/v1/responses") {
 			const key = req.headers.authorization?.replace(/^Bearer /i, "") ?? null;
-			const { model, stream } = JSON.parse(await body(req)) as {
+			const { model, stream, input } = JSON.parse(await body(req)) as {
 				model?: unknown;
 				stream?: unknown;
+				input?: unknown;
 			};
 			openCodeRequests.push({ key, model });
+			openCodeAsked.push({ key, text: askedText(input) });
 			const fault = openCodeFaults.shift();
 			if (fault) return json(fault.status, fault.body ?? { error: { message: "Simulated" } });
 			if (!key || !openCodeKeys.has(key)) {
 				return json(401, { error: { type: "AuthError", message: "Invalid API key." } });
+			}
+			const limit = openCodeLimits.get(key);
+			if (limit) {
+				res.writeHead(429, {
+					"content-type": "application/json",
+					...(limit.retryAfter === undefined ? {} : { "retry-after": String(limit.retryAfter) }),
+				});
+				return res.end(
+					JSON.stringify({
+						error: { type: "rate_limit_exceeded", message: "Rate limit reached." },
+					}),
+				);
 			}
 			if (stream === true) {
 				const reply = openCodeReplies.shift() ?? { deltas: ["pong"] };
@@ -228,6 +273,20 @@ export async function startFakeUpstream() {
 					if (!res.writableEnded) openCodeHungUp.push(key);
 				});
 				for (const event of head) res.write(event);
+				if (reply.limited) {
+					openCodeLimits.set(key, {});
+					return res.end(
+						sseEvent({
+							type: "response.failed",
+							response: {
+								id: `resp_${randomUUID()}`,
+								model,
+								status: "failed",
+								error: { code: "rate_limit_exceeded", message: "Rate limit reached." },
+							},
+						}),
+					);
+				}
 				if (!reply.hold) res.end(tail.join(""));
 				return;
 			}
