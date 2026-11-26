@@ -1,4 +1,5 @@
 import { createModels, InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { DurableObject } from "cloudflare:workers";
 
@@ -10,6 +11,26 @@ import type { AuthEnv } from "./lib/auth.ts";
 type Granted = Exclude<Grant, { refused: unknown }>;
 
 const encoder = new TextEncoder();
+
+/** The bot's instructions, sent with every turn until bots carry their own. */
+const INSTRUCTIONS = "You are Ditto, the owner's Chief of Staff. Reply plainly and briefly.";
+
+const OPENAI = "https://api.openai.com/";
+
+/**
+ * Sends api.openai.com requests to the test stage's fake upstream, as `${upstream}/<host>/<path>`,
+ * passed to Pi for one call rather than patched into the global fetch. Undefined off the test stage.
+ */
+function openaiUpstream(upstream: string | undefined): typeof fetch | undefined {
+	if (!upstream) return undefined;
+	return (input, init) => {
+		const request = new Request(input, init);
+		if (!request.url.startsWith(OPENAI)) return fetch(request);
+		return fetch(
+			new Request(`${upstream}/api.openai.com/${request.url.slice(OPENAI.length)}`, request),
+		);
+	};
+}
 
 /**
  * One per bot, running its turns through the pinned Pi runtime. Holds no credential: each turn
@@ -81,21 +102,33 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 	async #run(turn: Turn, grant: Granted, signal: AbortSignal, emit: (event: TurnEvent) => void) {
 		let status: Exclude<TurnStatus, "running">;
 		try {
+			// A ChatGPT plan pair runs on Pi's `openai` provider against the plan-usage Responses
+			// endpoint, never the Codex backend. Its grant is the access token alone, which Pi sends
+			// as a bearer token exactly as it would an OAuth credential's.
+			const chatgpt = turn.pair.connectionId === "chatgpt";
+			const provider = chatgpt ? "openai" : "opencode";
 			const credentials = new InMemoryCredentialStore();
-			await credentials.modify("opencode", async () => grant.credential);
+			await credentials.modify(provider, async () => grant.credential);
 			const models = createModels({
 				credentials,
 				// No ambient env or files: the call uses only the credential it was granted.
 				authContext: { env: async () => undefined, fileExists: async () => false },
 			});
-			models.setProvider(opencodeProvider());
-			const catalogued = models.getModel("opencode", turn.pair.model);
-			if (!catalogued) throw new Error(`Pi has no OpenCode model ${turn.pair.model}`);
-			const model = { ...catalogued, baseUrl: this.env.OPENCODE_BASE_URL ?? catalogued.baseUrl };
+			models.setProvider(chatgpt ? openaiProvider() : opencodeProvider());
+			const catalogued = models.getModel(provider, turn.pair.model);
+			if (!catalogued) throw new Error(`Pi has no ${provider} model ${turn.pair.model}`);
+			// Pi drops the fields the plan-usage flow rejects only for api.openai.com itself, so that
+			// base URL stays as catalogued and the test stage reroutes through `fetch` instead.
+			const model = chatgpt
+				? catalogued
+				: { ...catalogued, baseUrl: this.env.OPENCODE_BASE_URL ?? catalogued.baseUrl };
 			const events = models.stream(
 				model,
-				{ messages: [{ role: "user", content: turn.message, timestamp: Date.now() }] },
-				{ signal },
+				{
+					systemPrompt: INSTRUCTIONS,
+					messages: [{ role: "user", content: turn.message, timestamp: Date.now() }],
+				},
+				{ signal, fetch: chatgpt ? openaiUpstream(this.env.OAUTH_UPSTREAM) : undefined },
 			);
 			for await (const event of events) {
 				if (event.type !== "text_delta") continue;
