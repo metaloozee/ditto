@@ -33,6 +33,11 @@ export interface CredentialsRpc {
 	): Promise<{ connected: true } | { refused: ConnectRefusal }>;
 	/** False when the pair names no connection of this account, or a model it doesn't offer. */
 	chooseDefault(pair: Pair): Promise<boolean>;
+	/**
+	 * Forgets the connection and its stored access, and the default pair when it named it, so no
+	 * later grant can use it. False when the account has no such connection.
+	 */
+	disconnect(connectionId: string): Promise<boolean>;
 	/** The credential for one call on `pair`, or on the default pair when it is null. */
 	grant(accountId: string, pair: Pair | null): Promise<Grant>;
 	/**

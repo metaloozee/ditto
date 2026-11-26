@@ -201,6 +201,14 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		return true;
 	}
 
+	async disconnect(connectionId: string): Promise<boolean> {
+		if (!(await this.ctx.storage.delete(`connection:${connectionId}`))) return false;
+		const defaultPair = await this.ctx.storage.get<Pair>("defaultPair");
+		// Left in place, the default would come back to life with the next key connected.
+		if (defaultPair?.connectionId === connectionId) await this.ctx.storage.delete("defaultPair");
+		return true;
+	}
+
 	async grant(accountId: string, pair: Pair | null): Promise<Grant> {
 		const included = await this.#includedModel();
 		const wanted = pair ?? (await this.#defaultPair(included));

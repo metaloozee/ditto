@@ -14,7 +14,12 @@ import { ModelAccessSection } from "#/components/model-access.tsx";
 import { toast } from "#/components/ui/toast.tsx";
 import { authClient, useSignOut } from "#/lib/auth-client.ts";
 import { resendAtFrom, sendLinkEmailCode } from "#/lib/email-code-client.ts";
-import { chooseDefaultPair, connectOpenCodeKey, getModelAccess } from "#/lib/model-access-api.ts";
+import {
+	chooseDefaultPair,
+	connectOpenCodeKey,
+	disconnectModel,
+	getModelAccess,
+} from "#/lib/model-access-api.ts";
 import { OPENCODE_MODELS } from "#/lib/model-access.ts";
 
 type SettingsSearch = { outcome?: LinkOutcome; method?: Method };
@@ -130,6 +135,18 @@ function Settings() {
 						const refused = await connectOpenCodeKey(key, model);
 						if (!refused) await router.invalidate();
 						return refused;
+					}}
+					onDisconnect={async (connectionId) => {
+						const refused = await disconnectModel(connectionId);
+						if (refused) {
+							toast({
+								id: "notice-disconnect",
+								state: "error",
+								message: "The connection is still there",
+								description: refused,
+							});
+						}
+						await router.invalidate();
 					}}
 					// Sign in with ChatGPT is a later ticket, and only Connected is shown so far.
 					onConnectChatGPT={noop}

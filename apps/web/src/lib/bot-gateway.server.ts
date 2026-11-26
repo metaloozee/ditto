@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 
 import type { BotRpc } from "../bot-rpc.ts";
 import type { Member } from "../workspace-rpc.ts";
+import type { Pair } from "./model-access.ts";
 import type { Admitted } from "./workspace-gateway.server.ts";
 
 const BOT = /^\/bots\/([a-z0-9-]+)(\/.*)$/;
@@ -17,9 +18,23 @@ const REFUSED = {
 // A bot outside this workspace and an unknown one answer alike.
 const notFound = () => Response.json({ error: "No such bot" }, { status: 404 });
 
+/** `sent` as a pair when it names both a connection and a model, never one without the other. */
+function completePair(sent: unknown): Pair | undefined {
+	if (typeof sent !== "object" || sent === null) return undefined;
+	const { connectionId, model } = sent as Record<string, unknown>;
+	if (typeof connectionId !== "string" || typeof model !== "string") return undefined;
+	return connectionId && model ? { connectionId, model } : undefined;
+}
+
+/** The bot `botId` when the admitted workspace's membership names it, or null. */
+export async function memberBot(admitted: Admitted, botId: string) {
+	const members: Member[] = await admitted.workspace.members();
+	return members.some((member) => member.id === botId) ? env.BOT.getByName(botId) : null;
+}
+
 /**
  * Answers `/bots/<botId>/…` under an admitted workspace: a turn (`POST /turns`, an SSE stream)
- * and Stop (`POST /stop`). Reaches the bot only once the workspace's membership names it, and
+ * Stop (`POST /stop`) and the bot's own pair (`GET` and `PUT /model`). Reaches the bot only once the workspace's membership names it, and
  * gives it the account from the session. Leaves other paths alone.
  */
 export async function botRoute(
@@ -30,9 +45,8 @@ export async function botRoute(
 	const matched = BOT.exec(rest);
 	if (!matched) return undefined;
 	const [, botId = "", path] = matched;
-	const members: Member[] = await admitted.workspace.members();
-	if (!members.some((member) => member.id === botId)) return notFound();
-	const bot = env.BOT.getByName(botId);
+	const bot = await memberBot(admitted, botId);
+	if (!bot) return notFound();
 	const { method } = request;
 
 	if (path === "/turns" && method === "POST") {
@@ -58,8 +72,30 @@ export async function botRoute(
 		const stopped: boolean = await bot.stop();
 		return new Response(null, { status: stopped ? 204 : 409 });
 	}
+	if (path === "/model" && method === "GET") {
+		const override: Pair | null = await bot.override();
+		return Response.json({ override });
+	}
+	if (path === "/model" && method === "PUT") {
+		const sent: unknown = await request.json().catch(() => null);
+		const override =
+			typeof sent === "object" && sent !== null && "override" in sent ? sent.override : undefined;
+		const pair = override === null ? null : completePair(override);
+		if (pair === undefined) {
+			return Response.json({ error: "Choose a connection and one of its models" }, { status: 400 });
+		}
+		const chosen: boolean = await bot.chooseOverride(admitted.accountId, pair);
+		return chosen
+			? new Response(null, { status: 204 })
+			: Response.json({ error: "No such connection or model" }, { status: 404 });
+	}
 	if (env.TEST_HOOKS === "on" && path === "/__test/stored" && method === "GET") {
 		return Response.json(await bot.stored());
+	}
+	if (env.TEST_HOOKS === "on" && path === "/__test/evict" && method === "POST") {
+		// The abort rejects the call that caused it.
+		await bot.evict().catch(() => undefined);
+		return new Response(null, { status: 204 });
 	}
 	return Response.json({ error: "No such route" }, { status: 404 });
 }

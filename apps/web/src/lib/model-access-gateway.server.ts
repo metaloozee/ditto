@@ -5,6 +5,8 @@ import { auth } from "./auth.server.ts";
 import { withCookies } from "./workspace-gateway.server.ts";
 
 const MODELS = /^\/api\/models(\/.*)?$/;
+/** A connection's own path, `/<connectionId>`, such as `/opencode`. */
+const CONNECTION = /^\/(opencode|chatgpt)$/;
 
 /** What the connect form says beside the key field when the key wasn't stored. */
 const REFUSED: Record<ConnectRefusal, { status: number; error: string }> = {
@@ -48,6 +50,13 @@ async function route(request: Request, accountId: string, rest: string): Promise
 		return chosen
 			? new Response(null, { status: 204 })
 			: Response.json({ error: "No such connection or model" }, { status: 404 });
+	}
+	const disconnecting = CONNECTION.exec(rest);
+	if (disconnecting && method === "DELETE") {
+		const disconnected = await credentials.disconnect(disconnecting[1] ?? "");
+		return disconnected
+			? new Response(null, { status: 204 })
+			: Response.json({ error: "No such connection" }, { status: 404 });
 	}
 	if (env.TEST_HOOKS === "on" && rest === "/__test/stored" && method === "GET") {
 		return Response.json(await credentials.stored());
