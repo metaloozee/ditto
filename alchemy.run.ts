@@ -31,6 +31,31 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 			stage === "test"
 				? 2
 				: yield* Effect.orDie(Config.Int("COMPUTER_MAX_INSTANCES").pipe(Config.withDefault(2)));
+		// The included model (ADR-0011), off unless the operator turns it on. It is Workers AI,
+		// billed to the operator, through an AI Gateway that logs each request's account. The test
+		// stage binds a stand-in that passes each request to the fake Workers AI instead.
+		const includedModel = yield* Effect.orDie(
+			Config.String("INCLUDED_MODEL").pipe(Config.withDefault("off")),
+		);
+		const workersAi: Cloudflare.WorkerBindingProps =
+			stage === "test"
+				? {
+						AI: Cloudflare.Worker("workers-ai-stand-in", {
+							name: `ditto-app-${stage}-workers-ai`,
+							main: path.join(import.meta.dirname, "apps/web/tests/models/workers-ai-stand-in.ts"),
+							// Off the dev port it would take otherwise. Reached only through the binding.
+							dev: { port: 1352 },
+							env: { UPSTREAM: Config.String("OAUTH_UPSTREAM") },
+						}),
+						AI_GATEWAY_ID: "test-gateway",
+					}
+				: includedModel === "on"
+					? {
+							AI: Cloudflare.Workers.AI(),
+							AI_GATEWAY_ID: (yield* Cloudflare.AI.Gateway("gateway", { collectLogs: true }))
+								.gatewayId,
+						}
+					: {};
 		return {
 			name: `ditto-app-${stage}`,
 			rootDir: path.join(import.meta.dirname, "apps/web"),
@@ -57,6 +82,8 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 				COOKIE_ENCRYPTION_KEY: Config.Redacted("COOKIE_ENCRYPTION_KEY"),
 				// Encrypts each account's stored model connections (#18). Losing it loses them.
 				CREDENTIALS_ENCRYPTION_KEY: Config.Redacted("CREDENTIALS_ENCRYPTION_KEY"),
+				...workersAi,
+				INCLUDED_MODEL: includedModel,
 				BOT: Cloudflare.DurableObject<BotRpc>("bot", { className: "Bot" }),
 				CREDENTIALS: Cloudflare.DurableObject<CredentialsRpc>("credentials", {
 					className: "Credentials",

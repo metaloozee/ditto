@@ -1,4 +1,13 @@
-import { createModels, InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import {
+	type AssistantMessage,
+	type Context,
+	createModels,
+	InMemoryCredentialStore,
+	type Tool,
+	type ToolResultMessage,
+} from "@earendil-works/pi-ai";
+import { CLOUDFLARE_GATEWAY_BINDING_AUTH_SENTINEL } from "@earendil-works/pi-ai/api/cloudflare-ai-binding";
+import { cloudflareWorkersAIProvider } from "@earendil-works/pi-ai/providers/cloudflare-workers-ai";
 import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { DurableObject } from "cloudflare:workers";
 
@@ -10,6 +19,39 @@ import type { AuthEnv } from "./lib/auth.ts";
 type Granted = Exclude<Grant, { refused: unknown }>;
 
 const encoder = new TextEncoder();
+
+/** The tools a bot's model may call, as the model sees them. */
+const TOOLS: Tool[] = [
+	{
+		name: "current_time",
+		description: "Returns the current date and time in UTC, as ISO 8601. Takes no arguments.",
+		parameters: { type: "object", properties: {}, additionalProperties: false },
+	},
+];
+
+/** What each tool does, run by the Bot itself. */
+const RUN: Record<string, () => string> = {
+	current_time: () => new Date().toISOString(),
+};
+
+/** The most model replies one turn may take, so a model that keeps calling tools still ends. */
+const TOOL_ROUNDS = 8;
+
+/** The result of one tool call in a reply, for the model's next round. */
+function toolResult(block: AssistantMessage["content"][number]): ToolResultMessage[] {
+	if (block.type !== "toolCall") return [];
+	const run = RUN[block.name];
+	return [
+		{
+			role: "toolResult",
+			toolCallId: block.id,
+			toolName: block.name,
+			content: [{ type: "text", text: run ? run() : `No tool is named ${block.name}` }],
+			isError: !run,
+			timestamp: Date.now(),
+		},
+	];
+}
 
 /**
  * One per bot, running its turns through the pinned Pi runtime. Holds no credential: each turn
@@ -52,7 +94,7 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 			writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)).catch(() => {});
 		};
 		emit({ type: "start", turnId: turn.id, pair: turn.pair });
-		void this.#run(turn, grant, running.controller.signal, emit).finally(() => {
+		void this.#run(accountId, turn, grant, running.controller.signal, emit).finally(() => {
 			if (this.#running === running) this.#running = null;
 			writer.close().catch(() => {});
 		});
@@ -78,31 +120,65 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		return namespace.getByName(accountId);
 	}
 
-	async #run(turn: Turn, grant: Granted, signal: AbortSignal, emit: (event: TurnEvent) => void) {
+	/** Pi set up for the granted pair, holding only what the grant gave it. */
+	async #model(accountId: string, grant: Granted) {
+		const credentials = new InMemoryCredentialStore();
+		const models = createModels({
+			credentials,
+			// No ambient env or files: the call uses only the credential it was granted.
+			authContext: { env: async () => undefined, fileExists: async () => false },
+		});
+		if ("included" in grant) {
+			// Pi wants a Cloudflare key and account before it sends. Neither is sent: each request
+			// goes to the account's Credentials object, which adds what the gateway needs.
+			await credentials.modify("cloudflare-workers-ai", async () => ({
+				type: "api_key",
+				key: CLOUDFLARE_GATEWAY_BINDING_AUTH_SENTINEL,
+				env: { CLOUDFLARE_ACCOUNT_ID: "binding" },
+			}));
+			models.setProvider(cloudflareWorkersAIProvider());
+			const model = models.getModel("cloudflare-workers-ai", grant.included);
+			if (!model) throw new Error(`Pi has no Workers AI model ${grant.included}`);
+			const through = this.#credentials(accountId);
+			const fetch: typeof globalThis.fetch = async (_url, init) =>
+				through.included(accountId, typeof init?.body === "string" ? init.body : "");
+			return { models, model, fetch };
+		}
+		await credentials.modify("opencode", async () => grant.credential);
+		models.setProvider(opencodeProvider());
+		const catalogued = models.getModel("opencode", grant.pair.model);
+		if (!catalogued) throw new Error(`Pi has no OpenCode model ${grant.pair.model}`);
+		const model = { ...catalogued, baseUrl: this.env.OPENCODE_BASE_URL ?? catalogued.baseUrl };
+		return { models, model, fetch: undefined };
+	}
+
+	async #run(
+		accountId: string,
+		turn: Turn,
+		grant: Granted,
+		signal: AbortSignal,
+		emit: (event: TurnEvent) => void,
+	) {
 		let status: Exclude<TurnStatus, "running">;
 		try {
-			const credentials = new InMemoryCredentialStore();
-			await credentials.modify("opencode", async () => grant.credential);
-			const models = createModels({
-				credentials,
-				// No ambient env or files: the call uses only the credential it was granted.
-				authContext: { env: async () => undefined, fileExists: async () => false },
-			});
-			models.setProvider(opencodeProvider());
-			const catalogued = models.getModel("opencode", turn.pair.model);
-			if (!catalogued) throw new Error(`Pi has no OpenCode model ${turn.pair.model}`);
-			const model = { ...catalogued, baseUrl: this.env.OPENCODE_BASE_URL ?? catalogued.baseUrl };
-			const events = models.stream(
-				model,
-				{ messages: [{ role: "user", content: turn.message, timestamp: Date.now() }] },
-				{ signal },
-			);
-			for await (const event of events) {
-				if (event.type !== "text_delta") continue;
-				turn.reply += event.delta;
-				emit({ type: "delta", text: event.delta });
+			const { models, model, fetch } = await this.#model(accountId, grant);
+			const context: Context = {
+				messages: [{ role: "user", content: turn.message, timestamp: Date.now() }],
+				tools: TOOLS,
+			};
+			// Each round streams one reply; one that calls tools gets their results and goes again.
+			let reply: AssistantMessage;
+			for (let round = 1; ; round++) {
+				const events = models.stream(model, context, { signal, fetch });
+				for await (const event of events) {
+					if (event.type !== "text_delta") continue;
+					turn.reply += event.delta;
+					emit({ type: "delta", text: event.delta });
+				}
+				reply = await events.result();
+				if (reply.stopReason !== "toolUse" || round === TOOL_ROUNDS) break;
+				context.messages.push(reply, ...reply.content.flatMap(toolResult));
 			}
-			const reply = await events.result();
 			status = signal.aborted
 				? "stopped"
 				: reply.stopReason === "error" || reply.stopReason === "aborted"

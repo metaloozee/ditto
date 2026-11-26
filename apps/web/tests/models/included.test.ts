@@ -1,0 +1,207 @@
+import type { BrowserContext, Page } from "playwright";
+import { describe, expect, it } from "vite-plus/test";
+
+import { continueWithGitHub, gitHubUser, newVisitor, open } from "../auth/visitor.ts";
+import { failNextOpenCodeRequest, openCodeKey, openCodeRequests } from "./opencode.ts";
+import { failNextWorkersAiRequest, workersAiRequests } from "./workers-ai.ts";
+
+const DEEPSEEK = "@cf/deepseek-ai/deepseek-v4.1-flash-1017";
+const GLM = "@cf/zai-org/glm-5.3";
+
+/** A signed-in owner who has opened their workspace, with their account and Chief of Staff. */
+async function owner() {
+	const visitor = await newVisitor();
+	await continueWithGitHub(visitor.page, gitHubUser());
+	const opened = await visitor.context.request.post("/api/workspaces/open");
+	expect(opened.status()).toBe(200);
+	const { workspaceId, chiefOfStaff } = (await opened.json()) as {
+		workspaceId: string;
+		chiefOfStaff: { id: string };
+	};
+	const session = (await (await visitor.context.request.get("/api/auth/get-session")).json()) as {
+		user: { id: string };
+	};
+	return { ...visitor, accountId: session.user.id, workspaceId, botId: chiefOfStaff.id };
+}
+
+/**
+ * Whether this account is offered the included model. Stage configuration decides it; the test
+ * stage leaves it off and lets each test account turn it on, so other tests keep their stage.
+ */
+async function offerIncluded(context: BrowserContext, offered: boolean) {
+	const response = await context.request.put("/api/models/__test/included", { data: { offered } });
+	expect(response.status()).toBe(204);
+}
+
+/** Sends `message` straight to the bot and answers the whole response, its SSE included. */
+async function post(context: BrowserContext, workspaceId: string, botId: string, message: string) {
+	const response = await context.request.post(
+		`/api/workspaces/${workspaceId}/bots/${botId}/turns`,
+		{ data: { message } },
+	);
+	return { status: response.status(), body: await response.text() };
+}
+
+const composer = (page: Page) => page.getByRole("textbox", { name: "Message Ditto" });
+const messages = (page: Page) => page.getByLabel("Messages", { exact: true });
+const modelAccess = (page: Page) => page.getByRole("region", { name: "Model access" });
+
+async function send(page: Page, text: string) {
+	await composer(page).fill(text);
+	await page.getByRole("button", { name: "Send" }).click();
+}
+
+const ISO_TIME = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+
+/** The fake model asks for the tool it is offered, then answers with its result: two requests. */
+const toolTurn = (model: string, accountId: string) =>
+	[model, model].map((each) => ({
+		model: each,
+		metadata: { dittoAccount: accountId },
+		authorization: false,
+		tools: ["current_time"],
+	}));
+
+describe("the included model", () => {
+	it("runs a turn that calls a tool for an owner with no connection, billed to their account", async () => {
+		const { page, context, accountId } = await owner();
+		await offerIncluded(context, true);
+
+		await open(page, "/");
+		await send(page, "What time is it?");
+		await messages(page).getByText(ISO_TIME).waitFor();
+		await page.getByRole("button", { name: "Send" }).waitFor();
+
+		await expect(workersAiRequests(accountId)).resolves.toEqual(toolTurn(DEEPSEEK, accountId));
+	});
+
+	it("attributes each account's requests to that account", async () => {
+		const alice = await owner();
+		const bob = await owner();
+		await offerIncluded(alice.context, true);
+		await offerIncluded(bob.context, true);
+
+		const [fromAlice, fromBob] = await Promise.all([
+			post(alice.context, alice.workspaceId, alice.botId, "Hello from Alice"),
+			post(bob.context, bob.workspaceId, bob.botId, "Hello from Bob"),
+		]);
+		expect(fromAlice.body).toContain('"status":"completed"');
+		expect(fromBob.body).toContain('"status":"completed"');
+
+		await expect(workersAiRequests(alice.accountId)).resolves.toEqual(
+			toolTurn(DEEPSEEK, alice.accountId),
+		);
+		await expect(workersAiRequests(bob.accountId)).resolves.toEqual(
+			toolTurn(DEEPSEEK, bob.accountId),
+		);
+	});
+
+	it("moves to the recorded second choice once Workers AI retires the pinned model", async () => {
+		const { page, context, accountId, workspaceId, botId } = await owner();
+		await offerIncluded(context, true);
+		await failNextWorkersAiRequest({
+			model: DEEPSEEK,
+			status: 410,
+			body: { errors: [{ code: 5028, message: "This model was deprecated on 2026-11-20." }] },
+		});
+
+		const first = await post(context, workspaceId, botId, "What time is it?");
+		expect(first.body).toMatch(ISO_TIME);
+		expect(first.body).toContain('"status":"completed"');
+		const second = await post(context, workspaceId, botId, "And now?");
+		expect(second.body).toContain('"status":"completed"');
+
+		const models = (await workersAiRequests(accountId)).map((request) => request.model);
+		expect(models).toEqual([DEEPSEEK, GLM, GLM, GLM, GLM]);
+		await open(page, "/settings");
+		await modelAccess(page)
+			.getByText("Included model: GLM-5.3, provided by this deployment")
+			.waitFor();
+	});
+});
+
+describe("Settings and the pair select", () => {
+	it("show the included model on one line and as its own group", async () => {
+		const { page, context } = await owner();
+		await offerIncluded(context, true);
+		const key = await openCodeKey();
+		const connected = await context.request.post("/api/models/opencode", {
+			data: { key, model: "gpt-5.4-mini" },
+		});
+		expect(connected.status()).toBe(204);
+
+		await open(page, "/settings");
+		const section = modelAccess(page);
+		await section
+			.getByText("Included model: DeepSeek V4.1 Flash, provided by this deployment")
+			.waitFor();
+		const trigger = section.getByRole("button", { name: "Default model" });
+		await expect(trigger.textContent()).resolves.toBe("gpt-5.4-mini · OpenCode");
+
+		await trigger.click();
+		const picker = page.getByRole("dialog", { name: "Models" });
+		await expect(
+			picker.getByRole("tab").evaluateAll((tabs) => tabs.map((tab) => tab.ariaLabel)),
+		).resolves.toEqual(["OpenCode", "Included"]);
+		await picker.getByRole("tab", { name: "Included" }).click();
+		await picker.getByRole("option", { name: "DeepSeek V4.1 Flash" }).click();
+		await expect.poll(() => trigger.textContent()).toBe("DeepSeek V4.1 Flash · Included");
+
+		// The choice holds, and the next turn runs on it rather than on the key.
+		await open(page, "/settings");
+		await expect(trigger.textContent()).resolves.toBe("DeepSeek V4.1 Flash · Included");
+		await expect(openCodeRequests(key)).resolves.toHaveLength(1);
+	});
+
+	it("show it nowhere when the stage leaves it off", async () => {
+		const { page } = await owner();
+
+		await open(page, "/settings");
+		await modelAccess(page).getByRole("button", { name: "Connect an OpenCode API key" }).waitFor();
+		await expect(modelAccess(page).getByText("Included model").count()).resolves.toBe(0);
+	});
+});
+
+describe("without the included model or a usable connection", () => {
+	it("makes no model call", async () => {
+		const { page, context, workspaceId, botId } = await owner();
+		const before = (await workersAiRequests()).length;
+
+		await open(page, "/");
+		await expect(composer(page).isDisabled()).resolves.toBe(true);
+		const refused = await post(context, workspaceId, botId, "Anyone there?");
+		expect(refused.status).toBe(409);
+		expect((await workersAiRequests()).length).toBe(before);
+	});
+});
+
+describe("a failure on one source", () => {
+	it("never moves a turn to the other", async () => {
+		const { context, accountId, workspaceId, botId } = await owner();
+		await offerIncluded(context, true);
+		const key = await openCodeKey();
+		await context.request.post("/api/models/opencode", { data: { key, model: "gpt-5.4-mini" } });
+
+		// The key is the default: a refusal fails the turn, and the included model isn't asked.
+		await failNextOpenCodeRequest({ status: 400 });
+		const onKey = await post(context, workspaceId, botId, "Draft the weekly update.");
+		expect(onKey.body).toContain('"status":"failed"');
+		await expect(workersAiRequests(accountId)).resolves.toEqual([]);
+
+		// The included model is the default: a refusal fails the turn, and the key isn't used.
+		const chosen = await context.request.put("/api/models/default", {
+			data: { connectionId: "included", model: "DeepSeek V4.1 Flash" },
+		});
+		expect(chosen.status()).toBe(204);
+		await failNextWorkersAiRequest({ model: DEEPSEEK, status: 400 });
+		const onIncluded = await post(context, workspaceId, botId, "Draft the weekly update.");
+		expect(onIncluded.body).toContain('"status":"failed"');
+		// Withdrawn, it refuses the turn rather than falling to the key.
+		await offerIncluded(context, false);
+		const withdrawn = await post(context, workspaceId, botId, "Draft the weekly update.");
+		expect(withdrawn.status).toBe(409);
+
+		await expect(openCodeRequests(key)).resolves.toHaveLength(2);
+		await expect(workersAiRequests(accountId)).resolves.toHaveLength(1);
+	});
+});

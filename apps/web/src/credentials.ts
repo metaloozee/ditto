@@ -1,10 +1,22 @@
+import { createAiBindingFetch } from "@earendil-works/pi-ai/api/cloudflare-ai-binding";
 import { DurableObject } from "cloudflare:workers";
 
 import type { ConnectRefusal, CredentialsRpc, Grant, ModelAccessView } from "./credentials-rpc.ts";
 import type { AuthEnv } from "./lib/auth.ts";
-import { OPENCODE_MODELS, type Pair } from "./lib/model-access.ts";
+import { INCLUDED, OPENCODE_MODELS, type Pair } from "./lib/model-access.ts";
 
 const OPENCODE = "https://opencode.ai/inference/openai/v1";
+
+/**
+ * The included model (ADR-0011): the pinned Workers AI model, then the second choice the
+ * decision record names for when Workers AI retires it. Both called tools in #35.
+ */
+const INCLUDED_MODELS = [
+	{ id: "@cf/deepseek-ai/deepseek-v4.1-flash-1017", name: "DeepSeek V4.1 Flash" },
+	{ id: "@cf/zai-org/glm-5.3", name: "GLM-5.3" },
+] as const;
+
+type IncludedModel = (typeof INCLUDED_MODELS)[number];
 
 /** An encrypted value: AES-GCM under the stage's key, bound to the account and provider. */
 interface Sealed {
@@ -72,7 +84,8 @@ async function checkOpenCodeKey(
 /**
  * One per Ditto account, holding its model connections. The only reader of their keys: a key
  * enters once, when the owner connects it, and leaves only in a grant to a Bot for one call,
- * never in an answer to the owner.
+ * never in an answer to the owner. Every included-model request passes through it too, so it
+ * is where a per-account limit would go.
  */
 export class Credentials extends DurableObject<AuthEnv> implements CredentialsRpc {
 	override fetch(): Response {
@@ -81,13 +94,73 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 
 	async view(): Promise<ModelAccessView> {
 		const opencode = await this.ctx.storage.get<StoredConnection>("connection:opencode");
-		const defaultPair = (await this.ctx.storage.get<Pair>("defaultPair")) ?? null;
+		const included = await this.#includedModel();
 		return {
 			connections: opencode
 				? [{ id: "opencode", provider: "opencode", state: "Connected", models: OPENCODE_MODELS }]
 				: [],
-			defaultPair,
+			defaultPair: await this.#defaultPair(included),
+			...(included ? { included: included.name } : {}),
 		};
+	}
+
+	/**
+	 * The included model this account is offered: none unless the stage turns it on, else the
+	 * first of `INCLUDED_MODELS` Workers AI hasn't retired.
+	 */
+	async #includedModel(): Promise<IncludedModel | null> {
+		const override =
+			this.env.TEST_HOOKS === "on"
+				? await this.ctx.storage.get<boolean>("test:includedOffered")
+				: undefined;
+		if (!(override ?? this.env.INCLUDED_MODEL === "on") || !this.env.AI) return null;
+		const retired = (await this.ctx.storage.get<string[]>("included:retired")) ?? [];
+		return INCLUDED_MODELS.find((model) => !retired.includes(model.id)) ?? null;
+	}
+
+	/**
+	 * The chosen default, or the included model while nothing is chosen. A chosen included model
+	 * that is no longer offered leaves no default rather than falling to a connection.
+	 */
+	async #defaultPair(included: IncludedModel | null): Promise<Pair | null> {
+		const chosen = await this.ctx.storage.get<Pair>("defaultPair");
+		if (chosen && chosen.connectionId !== INCLUDED) return chosen;
+		return included ? { connectionId: INCLUDED, model: included.name } : null;
+	}
+
+	async included(accountId: string, body: string): Promise<Response> {
+		const request = JSON.parse(body) as Record<string, unknown>;
+		const send = this.env.AI && createAiBindingFetch(this.env.AI);
+		for (
+			let model = await this.#includedModel();
+			send && model;
+			model = await this.#includedModel()
+		) {
+			const response = await send(
+				`https://workers-binding.ai/ai-gateway/gateways/${this.env.AI_GATEWAY_ID}/workers-ai/v1/chat/completions`,
+				{
+					method: "POST",
+					// Built here, never taken from the Bot: the gateway bills the metadata's account, and
+					// a provider key in the request would be used instead of the operator's.
+					headers: {
+						"content-type": "application/json",
+						"cf-aig-metadata": JSON.stringify({ dittoAccount: accountId }),
+					},
+					body: JSON.stringify({ ...request, model: model.id }),
+				},
+			);
+			if (response.status !== 410) return response;
+			// Workers AI retired it (AiError 5028): every later request moves to the next choice.
+			await response.body?.cancel();
+			const retired = (await this.ctx.storage.get<string[]>("included:retired")) ?? [];
+			await this.ctx.storage.put("included:retired", [...retired, model.id]);
+		}
+		return Response.json({ error: "No included model is offered" }, { status: 403 });
+	}
+
+	async offerIncluded(offered: boolean): Promise<void> {
+		if (this.env.TEST_HOOKS !== "on") throw new Error("Test stage only");
+		await this.ctx.storage.put("test:includedOffered", offered);
 	}
 
 	async connectOpenCode(
@@ -112,6 +185,12 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	}
 
 	async chooseDefault(pair: Pair): Promise<boolean> {
+		if (pair.connectionId === INCLUDED) {
+			const included = await this.#includedModel();
+			if (pair.model !== included?.name) return false;
+			await this.ctx.storage.put("defaultPair", { connectionId: INCLUDED, model: included.name });
+			return true;
+		}
 		const { connections } = await this.view();
 		const connection = connections.find((each) => each.id === pair.connectionId);
 		if (!connection?.models.includes(pair.model)) return false;
@@ -123,7 +202,14 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	}
 
 	async grant(accountId: string, pair: Pair | null): Promise<Grant> {
-		const wanted = pair ?? (await this.ctx.storage.get<Pair>("defaultPair"));
+		const included = await this.#includedModel();
+		const wanted = pair ?? (await this.#defaultPair(included));
+		// Never moved to another source: an included pair gets the included model or nothing.
+		if (wanted?.connectionId === INCLUDED) {
+			return included
+				? { pair: { connectionId: INCLUDED, model: included.name }, included: included.id }
+				: { refused: "no-model" };
+		}
 		const opencode = await this.ctx.storage.get<StoredConnection>("connection:opencode");
 		if (
 			wanted?.connectionId !== "opencode" ||

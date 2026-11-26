@@ -52,6 +52,12 @@ async function route(request: Request, accountId: string, rest: string): Promise
 	if (env.TEST_HOOKS === "on" && rest === "/__test/stored" && method === "GET") {
 		return Response.json(await credentials.stored());
 	}
+	if (env.TEST_HOOKS === "on" && rest === "/__test/included" && method === "PUT") {
+		const sent = await body(request);
+		if (typeof sent?.offered !== "boolean") return badRequest();
+		await credentials.offerIncluded(sent.offered);
+		return new Response(null, { status: 204 });
+	}
 	return Response.json({ error: "No such route" }, { status: 404 });
 }
 

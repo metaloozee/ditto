@@ -110,7 +110,7 @@ function Settings() {
 			onSignOut={() => void signOut()}
 			modelAccess={
 				<ModelAccessSection
-					access={{ connections: modelAccess.connections }}
+					access={{ connections: modelAccess.connections, included: modelAccess.included }}
 					chatgptOffered={false}
 					opencodeModels={OPENCODE_MODELS}
 					defaultPair={modelAccess.defaultPair ?? undefined}
