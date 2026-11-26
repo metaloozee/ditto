@@ -69,3 +69,10 @@ export async function readModelAccess(): Promise<ModelAccessView | null> {
 	const response = await fetch("/api/models", { cache: "no-store" }).catch(() => null);
 	return response?.ok ? ((await response.json()) as ModelAccessView) : null;
 }
+
+/** Probes the connection once. Settles once Ditto has its new state; reread it to see it. */
+export async function checkConnection(connectionId: string): Promise<void> {
+	await fetch(`/api/models/${encodeURIComponent(connectionId)}/check`, { method: "POST" }).catch(
+		() => null,
+	);
+}

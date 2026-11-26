@@ -14,8 +14,13 @@ import { toast } from "#/components/ui/toast.tsx";
 import { WorkspaceFailed, WorkspacePending, WorkspaceView } from "#/components/workspace.tsx";
 import { useSignOut } from "#/lib/auth-client.ts";
 import { chooseBotOverride, getBotOverride } from "#/lib/bot-model.ts";
-import { accessOf, getModelAccess, readModelAccess } from "#/lib/model-access-api.ts";
-import { canMessage, type ModelAccess, type Pair } from "#/lib/model-access.ts";
+import {
+	accessOf,
+	checkConnection,
+	getModelAccess,
+	readModelAccess,
+} from "#/lib/model-access-api.ts";
+import { canMessage, type Interruption, type ModelAccess, type Pair } from "#/lib/model-access.ts";
 import { pendingTurns, sendTurn, stopTurn } from "#/lib/turn.ts";
 import { getSidebarPinned, openWorkspace } from "#/lib/workspace.ts";
 
@@ -219,7 +224,16 @@ function Home() {
 			messages={
 				exchanges.length > 0
 					? exchanges.map((exchange) => (
-							<ExchangeBubbles key={exchange.key} exchange={exchange} access={access} />
+							<ExchangeBubbles
+								key={exchange.key}
+								exchange={exchange}
+								access={access}
+								onCheck={async (connectionId) => {
+									await checkConnection(connectionId);
+									const latest = await readModelAccess();
+									if (latest) setView(latest);
+								}}
+							/>
 						))
 					: undefined
 			}
@@ -227,7 +241,15 @@ function Home() {
 	);
 }
 
-function ExchangeBubbles({ exchange, access }: { exchange: Exchange; access: ModelAccess }) {
+function ExchangeBubbles({
+	exchange,
+	access,
+	onCheck,
+}: {
+	exchange: Exchange;
+	access: ModelAccess;
+	onCheck: (connectionId: string) => Promise<void>;
+}) {
 	if (exchange.status === "queued") return <QueuedBubble>{exchange.message}</QueuedBubble>;
 	const ended = ENDED[exchange.status];
 	return (
@@ -245,14 +267,34 @@ function ExchangeBubbles({ exchange, access }: { exchange: Exchange; access: Mod
 				<InterruptionCard
 					access={access}
 					// Carried on once it runs again on its pair.
-					interruption={exchange.status === "interrupted" ? exchange.interruption : "Settled"}
+					interruption={
+						exchange.status === "interrupted"
+							? waitingOn(access, exchange.pair, exchange.interruption)
+							: "Settled"
+					}
 					turnPair={exchange.pair}
 					// Resuming on another pair is a later ticket, so the card offers none yet.
 					defaultPair={exchange.pair}
+					onCheck={() => onCheck(exchange.pair?.connectionId ?? "")}
 				/>
 			)}
 		</>
 	);
+}
+
+/**
+ * What an interrupted turn waits on: its connection as it is now, which a probe may have
+ * changed since (an outage found to be a refused key), or what stopped it.
+ */
+function waitingOn(
+	access: ModelAccess,
+	pair: Pair,
+	stoppedBy: Exclude<Interruption, "Settled">,
+): Exclude<Interruption, "Settled"> {
+	const state = access.connections.find((each) => each.id === pair.connectionId)?.state;
+	return state === "Throttled" || state === "Unavailable" || state === "ReconnectNeeded"
+		? state
+		: stoppedBy;
 }
 
 function Failed() {

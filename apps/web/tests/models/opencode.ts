@@ -78,3 +78,20 @@ export async function openCodeAsked(key: string): Promise<(string | null)[]> {
 	}[];
 	return all.filter((asked) => asked.key === key).map((asked) => asked.text);
 }
+
+/** Takes OpenCode down for `key`: every request naming it answers 503 until `endOpenCodeOutage`. */
+export async function startOpenCodeOutage(key: string): Promise<void> {
+	const response = await control("down", { method: "POST", body: JSON.stringify({ key }) });
+	if (!response.ok) throw new Error(`Starting an OpenCode outage failed: ${response.status}`);
+}
+
+export async function endOpenCodeOutage(key: string): Promise<void> {
+	const response = await control("down", { method: "DELETE", body: JSON.stringify({ key }) });
+	if (!response.ok) throw new Error(`Ending an OpenCode outage failed: ${response.status}`);
+}
+
+/** Revokes `key`: from now on OpenCode answers every request naming it with 401. */
+export async function revokeOpenCodeKey(key: string): Promise<void> {
+	const response = await control("revoke", { method: "POST", body: JSON.stringify({ key }) });
+	if (!response.ok) throw new Error(`Revoking an OpenCode key failed: ${response.status}`);
+}

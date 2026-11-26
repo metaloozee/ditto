@@ -16,18 +16,23 @@ export function resetsAt(headers: Headers, now = Date.now()): string | undefined
 }
 
 /**
- * The fault in a provider's answer: its HTTP status and headers when it answered, and the
- * error a stream ended with, since a limit can also arrive after the reply began. Null when
- * the answer says nothing about the connection.
+ * The fault in a provider's answer: its HTTP status and headers when it answered,
+ * "unreachable" when the request never got an answer, and the error a stream ended with,
+ * since a limit can also arrive after the reply began. Null when the answer says nothing
+ * about the connection, or no request was made.
  */
 export function faultOf(
-	answer: { status: number; headers: Headers } | null,
+	answer: { status: number; headers: Headers } | "unreachable" | null,
 	error = "",
 ): Fault | null {
+	if (answer === "unreachable") return { state: "Unavailable" };
 	if (answer?.status === 429) {
 		const resets = resetsAt(answer.headers);
 		return resets ? { state: "Throttled", resetsAt: resets } : { state: "Throttled" };
 	}
 	if (/rate_limit_exceeded|usage_limit_reached/i.test(error)) return { state: "Throttled" };
+	// The provider no longer accepts the credential: only the owner can fix that.
+	if (answer?.status === 401 || answer?.status === 403) return { state: "ReconnectNeeded" };
+	if (answer && answer.status >= 500) return { state: "Unavailable" };
 	return null;
 }
