@@ -1,4 +1,3 @@
-import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
 
@@ -8,11 +7,8 @@ import type { ModelAccess, Pair } from "#/lib/model-access.ts";
 /** The signed-in account's model access, read on the server so Settings renders it at once. */
 export const getModelAccess = createServerFn({ method: "GET" }).handler(
 	async (): Promise<ModelAccessView> => {
-		const { env } = await import("cloudflare:workers");
-		const { auth } = await import("./auth.server.ts");
-		const session = await auth.api.getSession({ headers: getRequestHeaders() });
-		if (!session) throw redirect({ to: "/sign-in" });
-		const view: ModelAccessView = await env.CREDENTIALS.getByName(session.user.id).view();
+		const { signedInCredentials } = await import("./model-access-gateway.server.ts");
+		const view: ModelAccessView = await (await signedInCredentials(getRequestHeaders())).view();
 		return view;
 	},
 );
@@ -20,18 +16,17 @@ export const getModelAccess = createServerFn({ method: "GET" }).handler(
 /** Whether this deployment offers the signed-in owner the ChatGPT plan. */
 export const getChatGPTOffered = createServerFn({ method: "GET" }).handler(
 	async (): Promise<boolean> => {
-		const { env } = await import("cloudflare:workers");
-		const { auth } = await import("./auth.server.ts");
-		const session = await auth.api.getSession({ headers: getRequestHeaders() });
-		if (!session) throw redirect({ to: "/sign-in" });
-		const offered: boolean = await env.CREDENTIALS.getByName(session.user.id).offersChatGPT();
+		const { signedInCredentials } = await import("./model-access-gateway.server.ts");
+		const credentials = await signedInCredentials(getRequestHeaders());
+		const offered: boolean = await credentials.offersChatGPT();
 		return offered;
 	},
 );
 
 const UNREACHABLE = "Ditto couldn’t be reached. Check your connection and try again.";
 
-async function refusal(response: Response | null): Promise<string | undefined> {
+/** Why a model-access request didn’t go through, or nothing once it did. */
+export async function refusal(response: Response | null): Promise<string | undefined> {
 	if (!response) return UNREACHABLE;
 	if (response.ok) return undefined;
 	const { error } = (await response.json().catch(() => ({}))) as { error?: unknown };

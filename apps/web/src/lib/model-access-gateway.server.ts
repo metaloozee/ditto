@@ -1,3 +1,4 @@
+import { redirect } from "@tanstack/react-router";
 import { env } from "cloudflare:workers";
 
 import type { ConnectRefusal, CredentialsRpc } from "../credentials-rpc.ts";
@@ -135,4 +136,11 @@ export async function modelAccessGateway(request: Request): Promise<Response | u
 	});
 	if (!session) return Response.json({ error: "Sign in first" }, { status: 401 });
 	return withCookies(await route(request, session.user.id, matched[1] ?? "/"), refreshed);
+}
+
+/** The signed-in account's Credentials object, for a server function; a visitor is sent to sign in. */
+export async function signedInCredentials(headers: Headers) {
+	const session = await auth.api.getSession({ headers });
+	if (!session) throw redirect({ to: "/sign-in" });
+	return env.CREDENTIALS.getByName(session.user.id);
 }

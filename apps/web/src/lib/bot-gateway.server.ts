@@ -27,7 +27,6 @@ function completePair(sent: unknown): Pair | undefined {
 	return connectionId && model ? { connectionId, model } : undefined;
 }
 
-/** The bot `botId` when the admitted workspace's membership names it, or null. */
 export async function memberBot(admitted: Admitted, botId: string) {
 	const members: Member[] = await admitted.workspace.members();
 	return members.some((member) => member.id === botId) ? env.BOT.getByName(botId) : null;
@@ -36,9 +35,9 @@ export async function memberBot(admitted: Admitted, botId: string) {
 /**
  * Answers `/bots/<botId>/…` under an admitted workspace: a turn (`POST /turns`, an SSE stream)
  * or a queued message (202), what still waits (`GET /turns`), Resume on a new pair
- * (`POST /turns/<turnId>/resume`), Stop (`POST /stop`) and the
- * bot's own pair (`GET` and `PUT /model`). Reaches the bot only once the workspace's membership names it, and
- * gives it the account from the session. Leaves other paths alone.
+ * (`POST /turns/<turnId>/resume`), Stop (`POST /stop`) and the bot's own pair (`GET` and
+ * `PUT /model`). Reaches the bot only once the workspace's membership names it, and gives it
+ * the account from the session. Leaves other paths alone.
  */
 export async function botRoute(
 	request: Request,
