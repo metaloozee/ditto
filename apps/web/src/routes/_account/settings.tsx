@@ -20,6 +20,7 @@ import {
 	chooseDefaultPair,
 	connectOpenCodeKey,
 	disconnectModel,
+	getChatGPTOffered,
 	getModelAccess,
 } from "#/lib/model-access-api.ts";
 import { OPENCODE_MODELS } from "#/lib/model-access.ts";
@@ -32,7 +33,10 @@ export const Route = createFileRoute("/_account/settings")({
 		outcome: search.error ? oauthLinkOutcome(search.error) : oneOf(LINK_OUTCOMES, search.outcome),
 		method: oneOf(METHOD_KEYS, search.method),
 	}),
-	loader: () => getModelAccess(),
+	loader: async () => {
+		const [access, chatgptOffered] = await Promise.all([getModelAccess(), getChatGPTOffered()]);
+		return { access, chatgptOffered };
+	},
 	component: Settings,
 });
 
@@ -56,7 +60,7 @@ function oauthLinkOutcome(error: unknown): LinkOutcome {
 function Settings() {
 	const { account } = Route.useRouteContext();
 	const { outcome, method } = Route.useSearch();
-	const modelAccess = Route.useLoaderData();
+	const { access: modelAccess, chatgptOffered } = Route.useLoaderData();
 	const navigate = useNavigate();
 	const router = useRouter();
 	const signOut = useSignOut();
@@ -118,7 +122,7 @@ function Settings() {
 			modelAccess={
 				<ModelAccessSection
 					access={accessOf(modelAccess)}
-					chatgptOffered={false}
+					chatgptOffered={chatgptOffered}
 					opencodeModels={OPENCODE_MODELS}
 					defaultPair={modelAccess.defaultPair ?? undefined}
 					onDefaultPairChange={async (pair) => {

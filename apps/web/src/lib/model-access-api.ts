@@ -17,6 +17,18 @@ export const getModelAccess = createServerFn({ method: "GET" }).handler(
 	},
 );
 
+/** Whether this deployment offers the signed-in owner the ChatGPT plan. */
+export const getChatGPTOffered = createServerFn({ method: "GET" }).handler(
+	async (): Promise<boolean> => {
+		const { env } = await import("cloudflare:workers");
+		const { auth } = await import("./auth.server.ts");
+		const session = await auth.api.getSession({ headers: getRequestHeaders() });
+		if (!session) throw redirect({ to: "/sign-in" });
+		const offered: boolean = await env.CREDENTIALS.getByName(session.user.id).offersChatGPT();
+		return offered;
+	},
+);
+
 const UNREACHABLE = "Ditto couldn’t be reached. Check your connection and try again.";
 
 async function refusal(response: Response | null): Promise<string | undefined> {
