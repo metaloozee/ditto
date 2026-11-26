@@ -139,7 +139,7 @@ const trimmed = <T extends Values>(value: T) =>
 // A short, decaying shake: the field itself says "not this".
 const SHAKE = [0, -6, 5, -3, 2, 0].map((x) => ({ transform: `translateX(${x}px)` }));
 
-function shake(el: Element) {
+export function shake(el: Element) {
 	if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 	el.animate(SHAKE, { duration: 320, easing: "cubic-bezier(0.23, 1, 0.32, 1)" });
 }

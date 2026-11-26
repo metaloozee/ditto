@@ -1,4 +1,5 @@
 import {
+	Cancel01Icon,
 	Add01Icon,
 	BubbleChatIcon,
 	Delete02Icon,
@@ -44,6 +45,7 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "#/components/ui/dialog.tsx";
+import { Drawer, DrawerClose, DrawerContent, DrawerTitle } from "#/components/ui/drawer.tsx";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -54,6 +56,7 @@ import {
 } from "#/components/ui/dropdown-menu.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import { Label } from "#/components/ui/label.tsx";
+import { RadioGroup, RadioGroupItem } from "#/components/ui/radio-group.tsx";
 import {
 	Select,
 	SelectContent,
@@ -376,6 +379,17 @@ function DesignSystem() {
 							<Switch id="ds-sandbox" defaultChecked />
 							<Label htmlFor="ds-sandbox">Network access in sandbox</Label>
 						</div>
+						<RadioGroup defaultValue="review" aria-label="When a run finishes" className="gap-2">
+							<div className="flex items-center gap-2">
+								<RadioGroupItem id="ds-review" value="review" />
+								<Label htmlFor="ds-review">Ask me to review</Label>
+							</div>
+							<div className="flex items-center gap-2">
+								<RadioGroupItem id="ds-merge" value="merge" />
+								<Label htmlFor="ds-merge">Merge when checks pass</Label>
+							</div>
+						</RadioGroup>
+						<FloatingSheetDemo />
 					</div>
 				</Section>
 
@@ -553,11 +567,48 @@ function DesignSystem() {
 					>
 						Site request prototype
 					</Link>
+					<Link
+						to="/design/models"
+						search={{ state: "connected" }}
+						className={buttonVariants({ variant: "outline", className: "self-start" })}
+					>
+						Model access prototype
+					</Link>
 				</Section>
 
 				<Separator />
 			</main>
 		</TooltipProvider>
+	);
+}
+
+/** The floating side sheet: dims the page, never moves it, swipes away to the right. */
+function FloatingSheetDemo() {
+	const [open, setOpen] = useState(false);
+	return (
+		<div className="flex items-center">
+			<Button variant="outline" onClick={() => setOpen(true)}>
+				Open floating sheet
+			</Button>
+			<Drawer open={open} onOpenChange={setOpen} swipeDirection="right">
+				<DrawerContent side="end">
+					<div className="flex items-center justify-between gap-3 border-b border-border p-4">
+						<DrawerTitle className="font-semibold">Sheet</DrawerTitle>
+						<DrawerClose
+							render={
+								<Button variant="ghost" size="icon" className="-me-1 text-muted-foreground" />
+							}
+							aria-label="Close"
+						>
+							<HugeiconsIcon icon={Cancel01Icon} />
+						</DrawerClose>
+					</div>
+					<p className="p-4 text-pretty text-muted-foreground">
+						Settings that will grow live here, in sections that scroll.
+					</p>
+				</DrawerContent>
+			</Drawer>
+		</div>
 	);
 }
 

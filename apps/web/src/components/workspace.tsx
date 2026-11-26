@@ -1,13 +1,13 @@
 import {
 	Add01Icon,
 	Alert02Icon,
-	ArrowUp02Icon,
 	ComputerIcon,
 	ComputerTerminal01Icon,
 	Folder01Icon,
 	GitCompareIcon,
 	Logout01Icon,
 	Settings01Icon,
+	Settings02Icon,
 	PinIcon,
 	SidebarLeftIcon,
 	UnfoldMoreIcon,
@@ -19,6 +19,11 @@ import * as React from "react";
 
 import type { Account } from "#/components/account.tsx";
 import { DittoMark, DittoStage } from "#/components/ditto-mark.tsx";
+import {
+	COMPOSER_PLACEHOLDERS,
+	type ComposerMode,
+	SendOrStop,
+} from "#/components/model-access.tsx";
 import { Avatar, AvatarFallback } from "#/components/ui/avatar.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
@@ -124,6 +129,9 @@ export function WorkspaceView({
 	onPanelOpenChange,
 	onSignOut,
 	messages,
+	composer = "soon",
+	onOpenBotSettings,
+	botSettings,
 }: {
 	account: Account;
 	workspace: Workspace;
@@ -133,6 +141,10 @@ export function WorkspaceView({
 	/** Replaces the fixed greetings; only `/design` passes it until conversation lands (#19). */
 	messages?: React.ReactNode;
 	onSignOut: () => void;
+	composer?: ComposerMode;
+	/** Shows the gear in the bot panel; the caller renders `botSettings` and opens it. */
+	onOpenBotSettings?: () => void;
+	botSettings?: React.ReactNode;
 }) {
 	const docked = useDocked();
 	const name = workspace.chiefOfStaff.name;
@@ -142,9 +154,12 @@ export function WorkspaceView({
 			panelOpen={panelOpen}
 			onPanelOpenChange={onPanelOpenChange}
 			messages={messages}
+			composer={composer}
 		/>
 	);
-	const panel = <ComputerPanel computer={workspace.computer} />;
+	const panel = (
+		<ComputerPanel name={name} computer={workspace.computer} onOpenSettings={onOpenBotSettings} />
+	);
 	return (
 		<SidebarProvider defaultOpen={sidebarPinned} style={SIDEBAR_STYLE}>
 			<WorkspaceSidebar account={account} name={name} onSignOut={onSignOut} />
@@ -178,6 +193,7 @@ export function WorkspaceView({
 					</DrawerContent>
 				</Drawer>
 			)}
+			{botSettings}
 		</SidebarProvider>
 	);
 }
@@ -357,11 +373,13 @@ function ConversationPane({
 	panelOpen,
 	onPanelOpenChange,
 	messages,
+	composer,
 }: {
 	name: string;
 	panelOpen: boolean;
 	onPanelOpenChange: (open: boolean) => void;
 	messages?: React.ReactNode;
+	composer: ComposerMode;
 }) {
 	return (
 		<section
@@ -408,12 +426,13 @@ function ConversationPane({
 				</Tooltip>
 				<p className="bot-name-in mt-2 text-caption text-muted-foreground">Chief of Staff</p>
 			</header>
-			<Composer name={name} />
+			<Composer name={name} mode={composer} />
 		</section>
 	);
 }
 
-function Composer({ name }: { name: string }) {
+function Composer({ name, mode }: { name: string; mode: ComposerMode }) {
+	const off = mode === "soon" || mode === "no-model";
 	return (
 		<form
 			className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pt-10 pb-4"
@@ -427,20 +446,18 @@ function Composer({ name }: { name: string }) {
 					size="icon"
 					className="rounded-full"
 					aria-label="Attach"
-					disabled
+					disabled={off}
 				>
 					<HugeiconsIcon icon={Add01Icon} />
 				</Button>
 				<textarea
 					aria-label={`Message ${name}`}
-					placeholder="Chat is on its way"
+					placeholder={COMPOSER_PLACEHOLDERS[mode](name)}
 					rows={1}
-					disabled
+					disabled={off}
 					className="field-sizing-content max-h-40 min-h-8 flex-1 resize-none bg-transparent px-1 py-1.5 text-base outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed md:text-sm"
 				/>
-				<Button type="submit" size="icon" className="rounded-full" aria-label="Send" disabled>
-					<HugeiconsIcon icon={ArrowUp02Icon} />
-				</Button>
+				<SendOrStop mode={mode} />
 			</div>
 		</form>
 	);
@@ -452,12 +469,23 @@ const CONTROLS = [
 	{ label: "Changes", icon: GitCompareIcon },
 ];
 
-function ComputerPanel({ computer }: { computer: Workspace["computer"] }) {
+/**
+ * The bot panel: the computer's state and the bot's settings on the top row, then the screen
+ * and its controls. The conversation already names the bot, and the screen says what it is.
+ */
+function ComputerPanel({
+	name,
+	computer,
+	onOpenSettings,
+}: {
+	name: string;
+	computer: Workspace["computer"];
+	onOpenSettings?: () => void;
+}) {
 	const running = computer === "running";
 	return (
 		<div className="flex flex-col gap-4">
-			<div className="flex items-center justify-between gap-3">
-				<h2>Computer</h2>
+			<div className="flex min-h-8 items-center justify-between gap-3">
 				<Badge variant="secondary">
 					<span aria-hidden className="relative flex size-2">
 						{running ? (
@@ -469,6 +497,24 @@ function ComputerPanel({ computer }: { computer: Workspace["computer"] }) {
 					</span>
 					{running ? "Running" : "Stopped"}
 				</Badge>
+				{onOpenSettings && (
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Button
+									variant="ghost"
+									size="icon"
+									aria-label={`${name}’s settings`}
+									onClick={onOpenSettings}
+									className="-me-1.5 text-muted-foreground hover:text-foreground"
+								/>
+							}
+						>
+							<HugeiconsIcon icon={Settings02Icon} />
+						</TooltipTrigger>
+						<TooltipContent side="bottom">Settings</TooltipContent>
+					</Tooltip>
+				)}
 			</div>
 			{/* The screen sits in a bezel, like the mark: a lit frame around a dark, sunken display. */}
 			<div className="rounded-2xl bg-linear-to-b from-muted to-card p-1.5 ring-1 ring-foreground/10">
