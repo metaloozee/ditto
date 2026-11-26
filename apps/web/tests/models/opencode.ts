@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import { inject } from "vite-plus/test";
 
-import type { OpenCodeFault, OpenCodeReply, OpenCodeRequest } from "../auth/fake-upstream.ts";
+import type {
+	OpenCodeApi,
+	OpenCodeFault,
+	OpenCodeReply,
+	OpenCodeRequest,
+} from "../auth/fake-upstream.ts";
 
 const control = (path: string, init?: RequestInit) =>
 	fetch(`${inject("upstreamUrl")}/__opencode/${path}`, init);
@@ -18,13 +23,13 @@ export async function openCodeKey(): Promise<string> {
 	return key;
 }
 
-/** Makes simulated OpenCode answer its next Responses request with `fault`. */
+/** Makes simulated OpenCode answer its next request with `fault`. */
 export async function failNextOpenCodeRequest(fault: OpenCodeFault): Promise<void> {
 	const response = await control("fail-next", { method: "POST", body: JSON.stringify(fault) });
 	if (!response.ok) throw new Error(`Queuing an OpenCode fault failed: ${response.status}`);
 }
 
-/** Makes simulated OpenCode stream `reply` to its next turn, a streamed Responses request. */
+/** Makes simulated OpenCode stream `reply` to its next turn, a streamed request. */
 export async function replyToNextOpenCodeTurn(reply: OpenCodeReply): Promise<void> {
 	const response = await control("reply-next", { method: "POST", body: JSON.stringify(reply) });
 	if (!response.ok) throw new Error(`Queuing an OpenCode reply failed: ${response.status}`);
@@ -47,19 +52,24 @@ export async function openCodeTurnHungUp(key: string): Promise<boolean> {
 
 const requests = async () => (await (await control("requests")).json()) as OpenCodeRequest[];
 
-/** Every Responses request simulated OpenCode received that named `key`, or every one at all. */
+/** Every request simulated OpenCode received that named `key`, or every one at all. */
 export async function openCodeRequests(key?: string) {
 	return (await requests())
 		.filter((request) => key === undefined || request.key === key)
 		.map(({ key, model }) => ({ key, model }));
 }
 
-/** What each Responses request naming `key` asked, in order: the last thing the user said. */
+/** Which endpoint each request naming `key` went to, in order. */
+export async function openCodeApis(key: string): Promise<OpenCodeApi[]> {
+	return (await requests()).filter((request) => request.key === key).map(({ api }) => api);
+}
+
+/** What each request naming `key` asked, in order: the last thing the user said. */
 export async function openCodeAsked(key: string): Promise<(string | null)[]> {
 	return (await requests()).filter((request) => request.key === key).map(({ asked }) => asked);
 }
 
-/** Makes every Responses request naming `key` answer `fault`, until `clearOpenCodeFault`. */
+/** Makes every request naming `key` answer `fault`, until `clearOpenCodeFault`. */
 async function faultOpenCode(key: string, fault: OpenCodeFault): Promise<void> {
 	const response = await control("fault", {
 		method: "POST",

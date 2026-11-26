@@ -32,14 +32,27 @@ export type GoogleIdentity = {
 
 export type GoogleAuthorization = GoogleIdentity | { cancel: true };
 
-/**
- * A request OpenCode's Responses endpoint received: the key and model it named, and what it
- * asked, the last thing the user said in it.
- */
-export type OpenCodeRequest = { key: string | null; model: unknown; asked: string | null };
+/** OpenCode's two OpenAI-style endpoints: Pi's catalogue says which one serves a model. */
+export type OpenCodeApi = "responses" | "chat-completions";
+
+const OPENCODE_APIS: Record<string, OpenCodeApi> = {
+	"/opencode.ai/inference/openai/v1/responses": "responses",
+	"/opencode.ai/inference/openai/v1/chat/completions": "chat-completions",
+};
 
 /**
- * What OpenCode answers a Responses request with instead of serving it: once, for the next
+ * A request OpenCode received: the endpoint, the key and model it named, and what it asked,
+ * the last thing the user said in it.
+ */
+export type OpenCodeRequest = {
+	api: OpenCodeApi;
+	key: string | null;
+	model: unknown;
+	asked: string | null;
+};
+
+/**
+ * What OpenCode answers a request with instead of serving it: once, for the next
  * request, or for every request naming a key until the test clears it. A `retryAfter` in
  * seconds goes out as `retry-after`.
  */
@@ -61,7 +74,7 @@ const OPENCODE_ERRORS: Record<number, unknown> = {
  */
 export type OpenCodeReply = { deltas: string[]; hold?: boolean; limited?: boolean };
 
-/** The text of what a Responses request asked: the last thing the user said in it. */
+/** What a request asked, from Responses `input` or chat `messages`: the user's last words. */
 function askedText(input: unknown): string | null {
 	if (typeof input === "string") return input;
 	if (!Array.isArray(input)) return null;
@@ -165,6 +178,40 @@ function replyEvents(id: string, model: unknown, deltas: string[]) {
 					usage: { input_tokens: 5, output_tokens: deltas.length, total_tokens: 5 + deltas.length },
 				},
 			}),
+		],
+	};
+}
+
+const chatChunk = (data: unknown) => `data: ${JSON.stringify(data)}\n\n`;
+
+/** The chat completion chunks that carry `deltas` as one assistant message. */
+function chatEvents(id: string, model: unknown, deltas: string[]) {
+	const chunk = (delta: Record<string, unknown>, finish: string | null = null) =>
+		chatChunk({
+			id,
+			object: "chat.completion.chunk",
+			model,
+			choices: [{ index: 0, delta, finish_reason: finish }],
+		});
+	return {
+		head: [
+			chunk({ role: "assistant", content: "" }),
+			...deltas.map((delta) => chunk({ content: delta })),
+		],
+		tail: [
+			chunk({}, "stop"),
+			chatChunk({
+				id,
+				object: "chat.completion.chunk",
+				model,
+				choices: [],
+				usage: {
+					prompt_tokens: 5,
+					completion_tokens: deltas.length,
+					total_tokens: 5 + deltas.length,
+				},
+			}),
+			"data: [DONE]\n\n",
 		],
 	};
 }
@@ -319,14 +366,17 @@ export async function startFakeUpstream() {
 			for (const finish of held) finish();
 			return json(held.length ? 204 : 404, null);
 		}
-		if (req.method === "POST" && url.pathname === "/opencode.ai/inference/openai/v1/responses") {
+		const api = OPENCODE_APIS[url.pathname];
+		if (req.method === "POST" && api) {
 			const key = req.headers.authorization?.replace(/^Bearer /i, "") ?? null;
-			const { model, stream, input } = JSON.parse(await body(req)) as {
+			const { model, stream, input, messages } = JSON.parse(await body(req)) as {
 				model?: unknown;
 				stream?: unknown;
 				input?: unknown;
+				messages?: unknown;
 			};
-			openCodeRequests.push({ key, model, asked: askedText(input) });
+			const chat = api === "chat-completions";
+			openCodeRequests.push({ api, key, model, asked: askedText(chat ? messages : input) });
 			// A queued fault first, then the key's own; a key OpenCode never issued is refused.
 			const fault =
 				openCodeFaults.shift() ??
@@ -342,7 +392,11 @@ export async function startFakeUpstream() {
 			}
 			if (stream === true) {
 				const reply = openCodeReplies.shift() ?? { deltas: ["pong"] };
-				const { head, tail } = replyEvents(`resp_${randomUUID()}`, model, reply.deltas);
+				const { head, tail } = (chat ? chatEvents : replyEvents)(
+					`resp_${randomUUID()}`,
+					model,
+					reply.deltas,
+				);
 				res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
 				res.on("close", () => {
 					if (!res.writableEnded) openCodeHungUp.push(key);
@@ -351,15 +405,13 @@ export async function startFakeUpstream() {
 				const finish = reply.limited
 					? () => {
 							openCodeKeyFaults.set(key, { status: 429 });
+							const error = { code: "rate_limit_exceeded", message: "Rate limit reached." };
+							// Chat completions has no failed event: the error rides in a chunk of its own.
+							if (chat) return res.end(chatChunk({ error: { ...error, type: error.code } }));
 							res.end(
 								sseEvent({
 									type: "response.failed",
-									response: {
-										id: `resp_${randomUUID()}`,
-										model,
-										status: "failed",
-										error: { code: "rate_limit_exceeded", message: "Rate limit reached." },
-									},
+									response: { id: `resp_${randomUUID()}`, model, status: "failed", error },
 								}),
 							);
 						}
@@ -367,6 +419,17 @@ export async function startFakeUpstream() {
 				if (reply.hold) openCodeHeld.set(key, [...(openCodeHeld.get(key) ?? []), finish]);
 				else finish();
 				return;
+			}
+			if (chat) {
+				return json(200, {
+					id: `chatcmpl_${randomUUID()}`,
+					object: "chat.completion",
+					model,
+					choices: [
+						{ index: 0, message: { role: "assistant", content: "pong" }, finish_reason: "stop" },
+					],
+					usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 },
+				});
 			}
 			return json(200, {
 				id: `resp_${randomUUID()}`,
