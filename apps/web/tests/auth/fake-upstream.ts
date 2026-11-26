@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 
+import { fakeWorkersAi } from "./fake-workers-ai.ts";
+
 /** What simulated GitHub reports for the next person who authorizes Ditto. */
 export type GitHubIdentity = {
 	id: number;
@@ -119,6 +121,7 @@ export async function startFakeUpstream() {
 	const openCodeReplies: OpenCodeReply[] = [];
 	// Keys whose streamed turn the caller hung up on before it completed.
 	const openCodeHungUp: string[] = [];
+	const workersAi = fakeWorkersAi();
 
 	const server = createServer(async (req, res) => {
 		const url = new URL(req.url ?? "/", "http://fake");
@@ -289,6 +292,8 @@ export async function startFakeUpstream() {
 				identity.emails.map((e) => ({ ...e, visibility: e.primary ? "private" : null })),
 			);
 		}
+
+		if (await workersAi(req, res, url)) return;
 
 		json(404, { message: "Not Found" });
 	});
