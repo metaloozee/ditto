@@ -36,6 +36,19 @@ async function route(request: Request, accountId: string, rest: string): Promise
 		}
 		return new Response(null, { status: 204 });
 	}
+	if (rest === "/chatgpt" && method === "POST") {
+		const sent = await body(request);
+		const imported: boolean = await credentials.importChatGPT(accountId, sent?.credential);
+		return imported
+			? new Response(null, { status: 204 })
+			: Response.json(
+					{
+						error:
+							"Expected a Sign in with ChatGPT credential with its client ID and plan-usage scope",
+					},
+					{ status: 400 },
+				);
+	}
 	if (rest === "/default" && method === "PUT") {
 		const sent = await body(request);
 		if (typeof sent?.connectionId !== "string" || typeof sent.model !== "string") {

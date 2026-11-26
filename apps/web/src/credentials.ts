@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 
 import type { ConnectRefusal, CredentialsRpc, Grant, ModelAccessView } from "./credentials-rpc.ts";
 import type { AuthEnv } from "./lib/auth.ts";
-import { OPENCODE_MODELS, type Pair } from "./lib/model-access.ts";
+import { CHATGPT_MODELS, OPENCODE_MODELS, type Pair } from "./lib/model-access.ts";
 
 const OPENCODE = "https://opencode.ai/inference/openai/v1";
 
@@ -16,6 +16,49 @@ interface StoredConnection {
 	provider: "opencode";
 	key: Sealed;
 	connectedAt: string;
+}
+
+/** A Sign in with ChatGPT credential, as Pi saves one after the owner's local sign-in. */
+interface SignIn {
+	type: "oauth";
+	access: string;
+	refresh: string;
+	/** When the access token expires, in epoch milliseconds. */
+	expires: number;
+	/** The client ID OpenAI issued at sign-in, which a refresh must send. */
+	clientId: string;
+	scopes: string[];
+}
+
+/** The imported sign-in, sealed whole: only this object reads or rotates its refresh token. */
+interface StoredChatGPT {
+	provider: "chatgpt";
+	signIn: Sealed;
+	/** The access token's expiry, kept in the clear so a refresh can be planned without opening it. */
+	expires: number;
+	connectedAt: string;
+}
+
+/** Accepts only a sign-in that carries its client ID and the plan-usage grant. */
+function signIn(value: unknown): SignIn | undefined {
+	if (typeof value !== "object" || value === null) return undefined;
+	const { type, access, refresh, expires, clientId, scopes } = value as Record<string, unknown>;
+	if (
+		type !== "oauth" ||
+		typeof access !== "string" ||
+		!access ||
+		typeof refresh !== "string" ||
+		!refresh ||
+		typeof expires !== "number" ||
+		typeof clientId !== "string" ||
+		!clientId ||
+		!Array.isArray(scopes) ||
+		!scopes.every((scope) => typeof scope === "string") ||
+		!scopes.includes("chatgpt.tokens.use.direct")
+	) {
+		return undefined;
+	}
+	return { type, access, refresh, expires, clientId, scopes };
 }
 
 const base64 = (bytes: ArrayBuffer | Uint8Array) =>
@@ -70,9 +113,9 @@ async function checkOpenCodeKey(
 }
 
 /**
- * One per Ditto account, holding its model connections. The only reader of their keys: a key
- * enters once, when the owner connects it, and leaves only in a grant to a Bot for one call,
- * never in an answer to the owner.
+ * One per Ditto account, holding its model connections. The only reader of their keys: a key or
+ * ChatGPT sign-in enters once, when the owner connects or imports it, and only a key or access
+ * token leaves, in a grant to a Bot for one call, never in an answer to the owner.
  */
 export class Credentials extends DurableObject<AuthEnv> implements CredentialsRpc {
 	override fetch(): Response {
@@ -81,13 +124,50 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 
 	async view(): Promise<ModelAccessView> {
 		const opencode = await this.ctx.storage.get<StoredConnection>("connection:opencode");
+		const chatgpt = await this.ctx.storage.get<StoredChatGPT>("connection:chatgpt");
 		const defaultPair = (await this.ctx.storage.get<Pair>("defaultPair")) ?? null;
-		return {
-			connections: opencode
-				? [{ id: "opencode", provider: "opencode", state: "Connected", models: OPENCODE_MODELS }]
-				: [],
-			defaultPair,
+		const connections: ModelAccessView["connections"] = [];
+		if (opencode) {
+			connections.push({
+				id: "opencode",
+				provider: "opencode",
+				state: "Connected",
+				models: OPENCODE_MODELS,
+			});
+		}
+		if (chatgpt) {
+			connections.push({
+				id: "chatgpt",
+				provider: "chatgpt",
+				state: "Connected",
+				models: CHATGPT_MODELS,
+			});
+		}
+		return { connections, defaultPair };
+	}
+
+	async importChatGPT(accountId: string, credential: unknown): Promise<boolean> {
+		const imported = signIn(credential);
+		if (!imported) return false;
+		const connection: StoredChatGPT = {
+			provider: "chatgpt",
+			signIn: await seal(
+				this.env.CREDENTIALS_ENCRYPTION_KEY,
+				JSON.stringify(imported),
+				`${accountId}:chatgpt`,
+			),
+			expires: imported.expires,
+			connectedAt: new Date().toISOString(),
 		};
+		// A second import replaces the first whole, its refresh token included.
+		await this.ctx.storage.put("connection:chatgpt", connection);
+		if (!(await this.ctx.storage.get("defaultPair"))) {
+			await this.ctx.storage.put("defaultPair", {
+				connectionId: "chatgpt",
+				model: CHATGPT_MODELS[0],
+			});
+		}
+		return true;
 	}
 
 	async connectOpenCode(
@@ -124,6 +204,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 
 	async grant(accountId: string, pair: Pair | null): Promise<Grant> {
 		const wanted = pair ?? (await this.ctx.storage.get<Pair>("defaultPair"));
+		if (wanted?.connectionId === "chatgpt") return this.#grantChatGPT(accountId, wanted);
 		const opencode = await this.ctx.storage.get<StoredConnection>("connection:opencode");
 		if (
 			wanted?.connectionId !== "opencode" ||
@@ -145,5 +226,21 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 
 	async stored(): Promise<Record<string, unknown>> {
 		return Object.fromEntries(await this.ctx.storage.list());
+	}
+
+	/** Hands out the access token alone: the refresh token never leaves this object. */
+	async #grantChatGPT(accountId: string, wanted: Pair): Promise<Grant> {
+		const chatgpt = await this.ctx.storage.get<StoredChatGPT>("connection:chatgpt");
+		if (!chatgpt || !CHATGPT_MODELS.includes(wanted.model)) return { refused: "no-model" };
+		const opened = await open(
+			this.env.CREDENTIALS_ENCRYPTION_KEY,
+			chatgpt.signIn,
+			`${accountId}:chatgpt`,
+		);
+		const { access } = JSON.parse(opened) as SignIn;
+		return {
+			pair: { connectionId: wanted.connectionId, model: wanted.model },
+			credential: { type: "api_key", key: access },
+		};
 	}
 }

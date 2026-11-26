@@ -27,6 +27,12 @@ export interface CredentialsRpc {
 		key: string,
 		model: string,
 	): Promise<{ connected: true } | { refused: ConnectRefusal }>;
+	/**
+	 * Stores a Sign in with ChatGPT credential made on the owner's machine, encrypted for
+	 * `accountId`, replacing any earlier import. False unless it carries a client ID and the
+	 * plan-usage scope.
+	 */
+	importChatGPT(accountId: string, credential: unknown): Promise<boolean>;
 	/** False when the pair names no connection of this account, or a model it doesn't offer. */
 	chooseDefault(pair: Pair): Promise<boolean>;
 	/** The credential for one call on `pair`, or on the default pair when it is null. */
