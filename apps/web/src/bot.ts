@@ -16,6 +16,7 @@ import type {
 	BotRpc,
 	Pending,
 	Queued,
+	ResumeAnswer,
 	Turn,
 	TurnEvent,
 	TurnRefusal,
@@ -81,7 +82,8 @@ const PENDING_LIMIT = 100;
  *
  * A turn its connection interrupts stays stored as `unfinished`, with its pair and the reply so
  * far, and messages sent meanwhile wait in `queue`. Once Credentials sees the connection answer
- * again, `recover` resumes that turn on its own pair and then runs the queue in order.
+ * again, `recover` resumes that turn on its own pair and then runs the queue in order. Only the
+ * owner's Resume (`resumeOn`) moves it to another pair first.
  */
 export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 	#running: { id: string; controller: AbortController } | null = null;
@@ -89,6 +91,8 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 	#draining = false;
 	/** A recovery that arrived while a live turn ran, started once it ends. */
 	#recoverAfter: string | null = null;
+	/** The turn an owner's Resume is moving to a new pair, while it runs there. */
+	#resuming: string | null = null;
 
 	override fetch(): Response {
 		return Response.json({ object: "Bot" });
@@ -153,6 +157,38 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		} finally {
 			this.#draining = false;
 		}
+	}
+
+	async resumeOn(accountId: string, turnId: string, pair: Pair): Promise<ResumeAnswer> {
+		const [unfinished, turn] = await Promise.all([
+			this.ctx.storage.get<string>("unfinished"),
+			this.ctx.storage.get<Turn>(`turn:${turnId}`),
+		]);
+		if (!turn) return "unknown";
+		// A repeat, or a turn its own connection already carried on: nothing starts again.
+		if (this.#resuming === turnId || turn.status !== "interrupted") return "resumed";
+		if (unfinished !== turnId || this.#draining || this.#running) return "refused";
+		// Claimed before the first call out, so a second Resume can't start it beside this one.
+		this.#draining = true;
+		this.#resuming = turnId;
+		const release = () => {
+			this.#draining = false;
+			this.#resuming = null;
+		};
+		try {
+			const grant = await this.#credentials(accountId).grant(accountId, pair);
+			if ("refused" in grant) {
+				release();
+				return "refused";
+			}
+			// The drain resumes the unfinished turn on whatever pair its record names.
+			await this.ctx.storage.put(`turn:${turnId}`, { ...turn, pair: grant.pair });
+		} catch (error) {
+			release();
+			throw error;
+		}
+		this.ctx.waitUntil(this.#drain(accountId).finally(release));
+		return "resumed";
 	}
 
 	async pending(ids: string[]): Promise<Pending> {

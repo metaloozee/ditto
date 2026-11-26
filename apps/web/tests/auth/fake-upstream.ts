@@ -43,6 +43,7 @@ export type OpenCodeFault = { status: number; body?: unknown };
  * completed response. A held reply sends the deltas and then waits, until the caller hangs up
  * or the test releases it.
  * A limited reply sends the deltas, then fails on a rate limit, and limits its key from then on.
+ * Held and limited, it fails only when released, so several turns can be mid-reply at the limit.
  */
 export type OpenCodeReply = { deltas: string[]; hold?: boolean; limited?: boolean };
 
@@ -179,7 +180,7 @@ export async function startFakeUpstream() {
 	// What each Responses request asked, beside the key it named.
 	const openCodeAsked: { key: string | null; text: string | null }[] = [];
 	// Held turns by key, each finishing its stream when released.
-	const openCodeHeld = new Map<string, () => void>();
+	const openCodeHeld = new Map<string, (() => void)[]>();
 	const workersAi = fakeWorkersAi();
 	const chatgptTokens: ChatGPTTokens[] = [];
 	const chatgptRequests: ChatGPTRequest[] = [];
@@ -294,10 +295,10 @@ export async function startFakeUpstream() {
 		}
 		if (req.method === "POST" && url.pathname === "/__opencode/release") {
 			const { key } = JSON.parse(await body(req)) as { key: string };
-			const finish = openCodeHeld.get(key);
+			const held = openCodeHeld.get(key) ?? [];
 			openCodeHeld.delete(key);
-			finish?.();
-			return json(finish ? 204 : 404, null);
+			for (const finish of held) finish();
+			return json(held.length ? 204 : 404, null);
 		}
 		if (req.method === "POST" && url.pathname === "/opencode.ai/inference/openai/v1/responses") {
 			const key = req.headers.authorization?.replace(/^Bearer /i, "") ?? null;
@@ -336,22 +337,24 @@ export async function startFakeUpstream() {
 					if (!res.writableEnded) openCodeHungUp.push(key);
 				});
 				for (const event of head) res.write(event);
-				if (reply.limited) {
-					openCodeLimits.set(key, {});
-					return res.end(
-						sseEvent({
-							type: "response.failed",
-							response: {
-								id: `resp_${randomUUID()}`,
-								model,
-								status: "failed",
-								error: { code: "rate_limit_exceeded", message: "Rate limit reached." },
-							},
-						}),
-					);
-				}
-				if (reply.hold) openCodeHeld.set(key, () => res.end(tail.join("")));
-				else res.end(tail.join(""));
+				const finish = reply.limited
+					? () => {
+							openCodeLimits.set(key, {});
+							res.end(
+								sseEvent({
+									type: "response.failed",
+									response: {
+										id: `resp_${randomUUID()}`,
+										model,
+										status: "failed",
+										error: { code: "rate_limit_exceeded", message: "Rate limit reached." },
+									},
+								}),
+							);
+						}
+					: () => res.end(tail.join(""));
+				if (reply.hold) openCodeHeld.set(key, [...(openCodeHeld.get(key) ?? []), finish]);
+				else finish();
 				return;
 			}
 			return json(200, {

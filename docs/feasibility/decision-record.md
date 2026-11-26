@@ -1664,6 +1664,8 @@ Approval to onboard hosted users onto their ChatGPT plan is tracked here, apart 
 
 **Consequence while pending:** hosted users cannot be onboarded onto their ChatGPT plan, whatever the trials show. Technical readiness (the model route above) and approval are separate gates, and both must pass. Developer and owner testing on their own accounts, and the OpenCode API key route, continue meanwhile (ADR-0003). Ditto is local-only today, so nothing ships while this is pending.
 
+**Where the deployment records it (#66):** a hosted stage sets `DEPLOYMENT_MODE=hosted` and records the approval in `OPENAI_HOSTED_APPROVAL` (see `.env.example`). Until both gates are recorded, Settings says the plan is not offered and the import is refused.
+
 ### Open-source license
 
 The Sign in with ChatGPT route is OpenAI's token sharing for open source. Ditto has no license file yet. Until it does, the route is not offered to self-deployed owners either.
@@ -1671,3 +1673,5 @@ The Sign in with ChatGPT route is OpenAI's token sharing for open source. Ditto 
 **Status:** _Not started_
 
 **Consequence while pending:** owners can test the route on their own accounts. Ditto does not offer it.
+
+**Where the deployment records it (#66):** `OPEN_SOURCE_LICENSE`, the license's SPDX identifier (see `.env.example`). Empty, the default, means not recorded, so no stage offers the plan until it is set.

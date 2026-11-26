@@ -6,6 +6,7 @@ import type { Pair } from "./model-access.ts";
 import type { Admitted } from "./workspace-gateway.server.ts";
 
 const BOT = /^\/bots\/([a-z0-9-]+)(\/.*)$/;
+const RESUME = /^\/turns\/([a-z0-9-]+)\/resume$/;
 
 /** The most an owner's message may hold, so one request can't fill the turn record. */
 const MESSAGE_LIMIT = 32_000;
@@ -34,7 +35,8 @@ export async function memberBot(admitted: Admitted, botId: string) {
 
 /**
  * Answers `/bots/<botId>/…` under an admitted workspace: a turn (`POST /turns`, an SSE stream)
- * or a queued message (202), what still waits (`GET /turns`), Stop (`POST /stop`) and the
+ * or a queued message (202), what still waits (`GET /turns`), Resume on a new pair
+ * (`POST /turns/<turnId>/resume`), Stop (`POST /stop`) and the
  * bot's own pair (`GET` and `PUT /model`). Reaches the bot only once the workspace's membership names it, and
  * gives it the account from the session. Leaves other paths alone.
  */
@@ -76,6 +78,26 @@ export async function botRoute(
 		const ids = new URL(request.url).searchParams.get("ids")?.split(",").filter(Boolean) ?? [];
 		const pending: Awaited<ReturnType<BotRpc["pending"]>> = await bot.pending(ids);
 		return Response.json(pending, { headers: { "cache-control": "no-store" } });
+	}
+	const resuming = RESUME.exec(path ?? "");
+	if (resuming && method === "POST") {
+		const sent: unknown = await request.json().catch(() => null);
+		const pair = completePair(
+			typeof sent === "object" && sent !== null && "pair" in sent ? sent.pair : undefined,
+		);
+		if (!pair) {
+			return Response.json({ error: "Choose a connection and one of its models" }, { status: 400 });
+		}
+		const answer: Awaited<ReturnType<BotRpc["resumeOn"]>> = await bot.resumeOn(
+			admitted.accountId,
+			resuming[1] ?? "",
+			pair,
+		);
+		if (answer === "unknown") return Response.json({ error: "No such turn" }, { status: 404 });
+		if (answer === "refused") {
+			return Response.json({ error: "That model can’t take this turn now" }, { status: 409 });
+		}
+		return new Response(null, { status: 204 });
 	}
 	if (path === "/stop" && method === "POST") {
 		const stopped: boolean = await bot.stop();

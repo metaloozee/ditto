@@ -1,5 +1,7 @@
 import type { Pending, TurnEvent, TurnStatus } from "#/bot-rpc.ts";
 
+import type { Pair } from "./model-access.ts";
+
 const botPath = (workspaceId: string, botId: string) =>
 	`/api/workspaces/${workspaceId}/bots/${botId}`;
 
@@ -53,6 +55,23 @@ export async function sendTurn(
 /** Asks the bot to stop its running turn; the turn's stream then ends as "stopped". */
 export async function stopTurn(workspaceId: string, botId: string): Promise<void> {
 	await fetch(`${botPath(workspaceId, botId)}/stop`, { method: "POST" }).catch(() => null);
+}
+
+/** Moves the interrupted turn onto `pair` and resumes it there. Resolves to why not, or undefined. */
+export async function resumeTurn(
+	workspaceId: string,
+	botId: string,
+	turnId: string,
+	pair: Pair,
+): Promise<string | undefined> {
+	const response = await fetch(`${botPath(workspaceId, botId)}/turns/${turnId}/resume`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ pair }),
+	}).catch(() => null);
+	if (response?.ok) return undefined;
+	const refused = (await response?.json().catch(() => null)) as { error?: string } | null;
+	return refused?.error ?? "Ditto couldn’t be reached";
 }
 
 /** The turns named by `ids`, with the bot's unfinished turn and queue. Null when unreachable. */

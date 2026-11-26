@@ -42,6 +42,12 @@ export type TurnEvent =
 /** Why a turn didn't start: no usable model for the account, or a turn already running. */
 export type TurnRefusal = "no-model" | "busy";
 
+/**
+ * How a Resume on a new pair went: `resumed` once the turn is on its way, a repeat included;
+ * `refused` when that pair can't take it now; `unknown` when the bot has no such turn.
+ */
+export type ResumeAnswer = "resumed" | "refused" | "unknown";
+
 export interface BotRpc {
 	/**
 	 * Starts a turn on the bot's override, or else `accountId`'s default pair, and answers its
@@ -60,6 +66,11 @@ export interface BotRpc {
 	 * calls it once the connection the bot waits on answers again.
 	 */
 	recover(accountId: string): Promise<void>;
+	/**
+	 * Moves the interrupted turn `turnId` onto `pair` and resumes it there with its reply so far,
+	 * then runs the queue. Only the owner's explicit Resume calls it: nothing else moves a turn.
+	 */
+	resumeOn(accountId: string, turnId: string, pair: Pair): Promise<ResumeAnswer>;
 	/** The turns named by `ids`, the unfinished turn and the queue. */
 	pending(ids: string[]): Promise<Pending>;
 	/** Stops the running turn and aborts its upstream request. False when none runs. */

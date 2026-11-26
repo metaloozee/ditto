@@ -19,6 +19,16 @@ export interface Fault {
 	resetsAt?: string;
 }
 
+/**
+ * The gates on the ChatGPT plan, as the operator recorded them. Self-deployed needs the
+ * open-source license; hosted also needs OpenAI's approval. Empty means not recorded.
+ */
+export interface Deployment {
+	mode: "self-deployed" | "hosted";
+	license?: string;
+	approval?: string;
+}
+
 /** Why a key wasn't stored: OpenCode refused it, didn't answer, or the model isn't offered. */
 export type ConnectRefusal = "rejected" | "unavailable" | "unknown-model";
 
@@ -44,10 +54,17 @@ export interface CredentialsRpc {
 	): Promise<{ connected: true } | { refused: ConnectRefusal }>;
 	/**
 	 * Stores a Sign in with ChatGPT credential made on the owner's machine, encrypted for
-	 * `accountId`, replacing any earlier import. False unless it carries a client ID and the
-	 * plan-usage scope.
+	 * `accountId`, replacing any earlier import. Refused while the deployment doesn't offer the
+	 * plan, and unless it carries a client ID and the plan-usage scope.
 	 */
-	importChatGPT(accountId: string, credential: unknown): Promise<boolean>;
+	importChatGPT(
+		accountId: string,
+		credential: unknown,
+	): Promise<"imported" | "malformed" | "not-offered">;
+	/** Whether this deployment offers the ChatGPT plan, from its recorded gates alone. */
+	offersChatGPT(): Promise<boolean>;
+	/** Test stage only: answers this account as if the stage were configured as `deployment`. */
+	deployAs(deployment: Deployment): Promise<void>;
 	/** False when the pair names no connection of this account, or a model it doesn't offer. */
 	chooseDefault(pair: Pair): Promise<boolean>;
 	/**

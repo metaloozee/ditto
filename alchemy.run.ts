@@ -84,6 +84,26 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 				CREDENTIALS_ENCRYPTION_KEY: Config.Redacted("CREDENTIALS_ENCRYPTION_KEY"),
 				...workersAi,
 				INCLUDED_MODEL: includedModel,
+				// Whether owners are offered the ChatGPT plan (#66): gates the operator records, never
+				// inferred from a working call. The test stage records the license; its tests vary all
+				// three per account.
+				...(stage === "test"
+					? {
+							DEPLOYMENT_MODE: "self-deployed",
+							OPEN_SOURCE_LICENSE: "test-license",
+							OPENAI_HOSTED_APPROVAL: "",
+						}
+					: {
+							DEPLOYMENT_MODE: Config.Literals(["self-deployed", "hosted"], "DEPLOYMENT_MODE").pipe(
+								Config.withDefault("self-deployed"),
+							),
+							OPEN_SOURCE_LICENSE: Config.String("OPEN_SOURCE_LICENSE").pipe(
+								Config.withDefault(""),
+							),
+							OPENAI_HOSTED_APPROVAL: Config.String("OPENAI_HOSTED_APPROVAL").pipe(
+								Config.withDefault(""),
+							),
+						}),
 				BOT: Cloudflare.DurableObject<BotRpc>("bot", { className: "Bot" }),
 				CREDENTIALS: Cloudflare.DurableObject<CredentialsRpc>("credentials", {
 					className: "Credentials",
