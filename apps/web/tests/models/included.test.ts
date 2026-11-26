@@ -85,7 +85,7 @@ const toolTurn = (model: string, accountId: string) =>
 describe("the included model", () => {
 	it("runs a turn that calls a tool for an owner with no connection, billed to their account", async () => {
 		const { page, context, accountId } = await owner();
-		await offerIncluded(context, true);
+		await useIncluded(context);
 
 		await open(page, "/");
 		await send(page, "What time is it?");
@@ -98,8 +98,8 @@ describe("the included model", () => {
 	it("attributes each account's requests to that account", async () => {
 		const alice = await owner();
 		const bob = await owner();
-		await offerIncluded(alice.context, true);
-		await offerIncluded(bob.context, true);
+		await useIncluded(alice.context);
+		await useIncluded(bob.context);
 
 		const [fromAlice, fromBob] = await Promise.all([
 			post(alice.context, alice.workspaceId, alice.botId, "Hello from Alice"),
@@ -118,7 +118,7 @@ describe("the included model", () => {
 
 	it("moves to the recorded second choice once Workers AI retires the pinned model", async () => {
 		const { page, context, accountId, workspaceId, botId } = await owner();
-		await offerIncluded(context, true);
+		await useIncluded(context);
 		await failNextWorkersAiRequest({
 			model: DEEPSEEK,
 			status: 410,
@@ -192,6 +192,31 @@ describe("without the included model or a usable connection", () => {
 		const refused = await post(context, workspaceId, botId, "Anyone there?");
 		expect(refused.status).toBe(409);
 		expect((await workersAiRequests()).length).toBe(before);
+	});
+});
+
+describe("an included model the owner hasn't chosen", () => {
+	it("is no default, so a bot is refused rather than moved to it, after a disconnect too", async () => {
+		const { page, context, accountId, workspaceId, botId } = await owner();
+		await offerIncluded(context, true);
+		const view = async () => (await context.request.get("/api/models")).json() as Promise<unknown>;
+		await expect(view()).resolves.toMatchObject({
+			defaultPair: null,
+			included: "DeepSeek V4.1 Flash",
+		});
+		await open(page, "/");
+		await expect(composer(page).isDisabled()).resolves.toBe(true);
+		expect((await post(context, workspaceId, botId, "Anyone there?")).status).toBe(409);
+
+		const key = await openCodeKey();
+		const connected = await context.request.post("/api/models/opencode", {
+			data: { key, model: "gpt-5.4-mini" },
+		});
+		expect(connected.status()).toBe(204);
+		expect((await context.request.delete("/api/models/opencode")).status()).toBe(204);
+		await expect(view()).resolves.toMatchObject({ defaultPair: null });
+		expect((await post(context, workspaceId, botId, "Still there?")).status).toBe(409);
+		await expect(workersAiRequests(accountId)).resolves.toEqual([]);
 	});
 });
 

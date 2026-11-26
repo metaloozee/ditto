@@ -189,6 +189,10 @@ describe("other model access", () => {
 				data: { offered: true },
 			});
 			expect(offered.status()).toBe(204);
+			const chosen = await context.request.put("/api/models/default", {
+				data: { connectionId: "included", model: "DeepSeek V4.1 Flash" },
+			});
+			expect(chosen.status()).toBe(204);
 
 			const sent = await turn(context, workspaceId, botId, "What time is it?");
 			expect(sent.status).toBe(200);

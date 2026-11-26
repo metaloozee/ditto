@@ -335,12 +335,12 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	}
 
 	/**
-	 * The chosen default, or the included model while nothing is chosen. A chosen included model
-	 * that is no longer offered leaves no default rather than falling to a connection.
+	 * The default the owner chose, if any: the included model only once chosen, under its
+	 * current name. One no longer offered leaves no default rather than falling to a connection.
 	 */
 	async #defaultPair(included: IncludedModel | null): Promise<Pair | null> {
 		const chosen = await this.ctx.storage.get<Pair>("defaultPair");
-		if (chosen && chosen.connectionId !== INCLUDED) return chosen;
+		if (chosen?.connectionId !== INCLUDED) return chosen ?? null;
 		return included ? { connectionId: INCLUDED, model: included.name } : null;
 	}
 

@@ -137,7 +137,8 @@ function Home() {
 		exchanges.some(waits) || access.connections.some((each) => each.state === "Throttled");
 	const composer: ComposerMode = running
 		? "running"
-		: canMessage(access) || queueing
+		: // Turns run on the bot's own pair or the default, so without either nothing can send.
+			(canMessage(access) && Boolean(override ?? view.defaultPair)) || queueing
 			? "ready"
 			: "no-model";
 	const update = (key: string, change: (exchange: Exchange) => Exchange) =>
