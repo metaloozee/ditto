@@ -35,6 +35,12 @@ export async function replyToNextOpenCodeTurn(reply: OpenCodeReply): Promise<voi
 	if (!response.ok) throw new Error(`Queuing an OpenCode reply failed: ${response.status}`);
 }
 
+/** Completes the held turn that named `key`, as if OpenCode finished its reply. */
+export async function releaseOpenCodeTurn(key: string): Promise<void> {
+	const response = await control("release", { method: "POST", body: JSON.stringify({ key }) });
+	if (!response.ok) throw new Error(`Releasing an OpenCode turn failed: ${response.status}`);
+}
+
 /** Whether a streamed turn that named `key` was hung up on before it completed. */
 export async function openCodeTurnHungUp(key: string): Promise<boolean> {
 	const keys = (await (await control("hung-up")).json()) as string[];

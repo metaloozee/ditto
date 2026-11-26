@@ -38,7 +38,8 @@ export type OpenCodeFault = { status: number; body?: unknown };
 
 /**
  * How OpenCode streams its reply to the next turn: these text deltas in order, then the
- * completed response. A held reply sends the deltas and then waits, until the caller hangs up.
+ * completed response. A held reply sends the deltas and then waits, until the caller hangs up
+ * or the test releases it.
  * A limited reply sends the deltas, then fails on a rate limit, and limits its key from then on.
  */
 export type OpenCodeReply = { deltas: string[]; hold?: boolean; limited?: boolean };
@@ -140,6 +141,8 @@ export async function startFakeUpstream() {
 	const openCodeLimits = new Map<string, OpenCodeLimit>();
 	// What each Responses request asked, beside the key it named.
 	const openCodeAsked: { key: string | null; text: string | null }[] = [];
+	// Held turns by key, each finishing its stream when released.
+	const openCodeHeld = new Map<string, () => void>();
 
 	const server = createServer(async (req, res) => {
 		const url = new URL(req.url ?? "/", "http://fake");
@@ -239,6 +242,13 @@ export async function startFakeUpstream() {
 			else openCodeLimits.delete(key);
 			return json(204, null);
 		}
+		if (req.method === "POST" && url.pathname === "/__opencode/release") {
+			const { key } = JSON.parse(await body(req)) as { key: string };
+			const finish = openCodeHeld.get(key);
+			openCodeHeld.delete(key);
+			finish?.();
+			return json(finish ? 204 : 404, null);
+		}
 		if (req.method === "POST" && url.pathname === "/opencode.ai/inference/openai/v1/responses") {
 			const key = req.headers.authorization?.replace(/^Bearer /i, "") ?? null;
 			const { model, stream, input } = JSON.parse(await body(req)) as {
@@ -287,7 +297,8 @@ export async function startFakeUpstream() {
 						}),
 					);
 				}
-				if (!reply.hold) res.end(tail.join(""));
+				if (reply.hold) openCodeHeld.set(key, () => res.end(tail.join("")));
+				else res.end(tail.join(""));
 				return;
 			}
 			return json(200, {

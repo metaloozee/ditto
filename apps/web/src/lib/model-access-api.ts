@@ -46,6 +46,14 @@ export async function chooseDefaultPair(pair: Pair) {
 	return refusal(response);
 }
 
+/** Disconnects `connectionId` and forgets its access. Answers why it couldn't, or nothing. */
+export async function disconnectModel(connectionId: string) {
+	const response = await fetch(`/api/models/${encodeURIComponent(connectionId)}`, {
+		method: "DELETE",
+	}).catch(() => null);
+	return refusal(response);
+}
+
 /** The view as the components read it, with a limit's reset time back as a Date. */
 export function accessOf(view: ModelAccessView): ModelAccess {
 	return {

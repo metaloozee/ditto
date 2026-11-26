@@ -2,12 +2,20 @@ import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router"
 import { useEffect, useState } from "react";
 
 import type { Pending, Turn, TurnStatus } from "#/bot-rpc.ts";
-import { InterruptionCard, QueuedBubble, type ComposerMode } from "#/components/model-access.tsx";
+import { DittoMark } from "#/components/ditto-mark.tsx";
+import {
+	BotSettings,
+	InterruptionCard,
+	QueuedBubble,
+	type ComposerMode,
+} from "#/components/model-access.tsx";
 import { ConversationBubble, ConversationContent } from "#/components/ui/conversation.tsx";
+import { toast } from "#/components/ui/toast.tsx";
 import { WorkspaceFailed, WorkspacePending, WorkspaceView } from "#/components/workspace.tsx";
 import { useSignOut } from "#/lib/auth-client.ts";
+import { chooseBotOverride, getBotOverride } from "#/lib/bot-model.ts";
 import { accessOf, getModelAccess, readModelAccess } from "#/lib/model-access-api.ts";
-import { canMessage, type ModelAccess } from "#/lib/model-access.ts";
+import { canMessage, type ModelAccess, type Pair } from "#/lib/model-access.ts";
 import { pendingTurns, sendTurn, stopTurn } from "#/lib/turn.ts";
 import { getSidebarPinned, openWorkspace } from "#/lib/workspace.ts";
 
@@ -20,7 +28,10 @@ export const Route = createFileRoute("/_account/")({
 	shouldReload: false,
 	loader: async () => {
 		const [workspace, access] = await Promise.all([openWorkspace(), getModelAccess()]);
-		return { workspace, access, sidebarPinned: getSidebarPinned() };
+		const override = await getBotOverride({
+			data: { workspaceId: workspace.workspaceId, botId: workspace.chiefOfStaff.id },
+		});
+		return { workspace, access, override, sidebarPinned: getSidebarPinned() };
 	},
 	pendingComponent: WorkspacePending,
 	errorComponent: Failed,
@@ -82,15 +93,36 @@ function follow(exchanges: Exchange[], pending: Pending): Exchange[] {
 
 function Home() {
 	const { account } = Route.useRouteContext();
-	const { workspace, access: loaded, sidebarPinned } = Route.useLoaderData();
+	const {
+		workspace,
+		access: loaded,
+		override: savedOverride,
+		sidebarPinned,
+	} = Route.useLoaderData();
 	const { panel } = Route.useSearch();
 	const navigate = useNavigate();
 	const signOut = useSignOut();
 	const [view, setView] = useState(loaded);
 	const [exchanges, setExchanges] = useState<Exchange[]>([]);
+	const [settingsOpen, setSettingsOpen] = useState(false);
+	const [override, setOverride] = useState(savedOverride ?? undefined);
 	const { workspaceId } = workspace;
 	const botId = workspace.chiefOfStaff.id;
 	const access = accessOf(view);
+
+	const changeOverride = async (pair: Pair | undefined) => {
+		const before = override;
+		setOverride(pair);
+		const refused = await chooseBotOverride(workspaceId, botId, pair ?? null);
+		if (!refused) return;
+		setOverride(before);
+		toast({
+			id: "notice-bot-model",
+			state: "error",
+			message: "Ditto’s model didn’t change",
+			description: refused,
+		});
+	};
 
 	const running = exchanges.some((exchange) => exchange.live && exchange.status === "running");
 	// While a connection is limited, what the owner sends waits in the bot's queue.
@@ -170,6 +202,20 @@ function Home() {
 			composer={composer}
 			onSend={(message) => void send(message)}
 			onStop={() => void stopTurn(workspaceId, botId)}
+			onOpenBotSettings={() => setSettingsOpen(true)}
+			botSettings={
+				<BotSettings
+					name={workspace.chiefOfStaff.name}
+					role="Chief of Staff"
+					face={<DittoMark still />}
+					access={access}
+					defaultPair={view.defaultPair ?? undefined}
+					override={override}
+					onOverrideChange={(pair) => void changeOverride(pair)}
+					open={settingsOpen}
+					onOpenChange={setSettingsOpen}
+				/>
+			}
 			messages={
 				exchanges.length > 0
 					? exchanges.map((exchange) => (

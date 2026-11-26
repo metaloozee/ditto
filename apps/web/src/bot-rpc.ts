@@ -44,7 +44,8 @@ export type TurnRefusal = "no-model" | "busy";
 
 export interface BotRpc {
 	/**
-	 * Starts a turn on `accountId`'s default pair and answers its SSE stream of `TurnEvent`s.
+	 * Starts a turn on the bot's override, or else `accountId`'s default pair, and answers its
+	 * SSE stream of `TurnEvent`s.
 	 * Refuses before any upstream call when the account has no usable connection. Queues the
 	 * message instead while a turn waits on its connection, or its connection is in trouble.
 	 */
@@ -63,8 +64,15 @@ export interface BotRpc {
 	pending(ids: string[]): Promise<Pending>;
 	/** Stops the running turn and aborts its upstream request. False when none runs. */
 	stop(): boolean;
+	/** The pair this bot uses in place of the account default, or null when it inherits it. */
+	override(): Promise<Pair | null>;
+	/**
+	 * Sets the bot's own pair from its next turn on, or null to inherit the default. False when
+	 * the pair names no connection of `accountId`, or a model it doesn't offer.
+	 */
+	chooseOverride(accountId: string, pair: Pair | null): Promise<boolean>;
 	/** Test stage only: everything the object stores, exactly as stored. */
 	stored(): Promise<Record<string, unknown>>;
-	/** Test stage only: drops the live instance, as eviction would. */
+	/** Test stage only: drops the live instance, as an eviction would. */
 	evict(): void;
 }

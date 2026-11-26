@@ -14,6 +14,7 @@ import type {
 import type { CredentialsRpc, Fault, Grant } from "./credentials-rpc.ts";
 import type { Credentials } from "./credentials.ts";
 import type { AuthEnv } from "./lib/auth.ts";
+import type { Pair } from "./lib/model-access.ts";
 import { faultOf } from "./lib/provider-fault.ts";
 
 type Granted = Exclude<Grant, { refused: unknown }>;
@@ -55,7 +56,9 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		// Claimed before the first call out, so a second send can't start beside this one.
 		const running = { id: crypto.randomUUID(), controller: new AbortController() };
 		this.#running = running;
-		const grant = await this.#credentials(accountId).grant(accountId, null);
+		// The pair is resolved once, here: a change to it from now on reaches only the next turn.
+		const override = (await this.ctx.storage.get<Pair>("override")) ?? null;
+		const grant = await this.#credentials(accountId).grant(accountId, override);
 		if ("refused" in grant) {
 			this.#running = null;
 			if (grant.refused === "no-model") return { refused: "no-model" };
@@ -120,6 +123,22 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		return true;
 	}
 
+	async override(): Promise<Pair | null> {
+		return (await this.ctx.storage.get<Pair>("override")) ?? null;
+	}
+
+	async chooseOverride(accountId: string, pair: Pair | null): Promise<boolean> {
+		if (pair === null) {
+			await this.ctx.storage.delete("override");
+			return true;
+		}
+		const { connections } = await this.#credentials(accountId).view();
+		const connection = connections.find((each) => each.id === pair.connectionId);
+		if (!connection?.models.includes(pair.model)) return false;
+		await this.ctx.storage.put("override", { connectionId: pair.connectionId, model: pair.model });
+		return true;
+	}
+
 	async stored(): Promise<Record<string, unknown>> {
 		return Object.fromEntries(await this.ctx.storage.list());
 	}
@@ -175,7 +194,9 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 			const next = unfinished ? undefined : (await this.ctx.storage.get<Queued[]>("queue"))?.[0];
 			if (!unfinished && !next) return;
 
-			const grant = await credentials.grant(accountId, unfinished?.pair ?? null);
+			// An unfinished turn keeps its pair; a queued message takes the pair the bot uses now.
+			const pair = unfinished?.pair ?? (await this.ctx.storage.get<Pair>("override")) ?? null;
+			const grant = await credentials.grant(accountId, pair);
 			if ("refused" in grant) {
 				// Still in trouble: Credentials wakes the bot again. Without a model, the work waits.
 				if (grant.refused === "interrupted") {
