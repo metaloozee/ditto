@@ -18,6 +18,13 @@ if (!deployment || !cookie) {
 	process.exit(2);
 }
 
+const endpoint = new URL("/api/models/chatgpt", deployment);
+const local = ["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname);
+if (endpoint.protocol !== "https:" && !(local && endpoint.protocol === "http:")) {
+	log("Use an HTTPS deployment URL or a local development server.");
+	process.exit(2);
+}
+
 const scratch = await mkdtemp(path.join(tmpdir(), "ditto-chatgpt-"));
 try {
 	const { store } = await siwcCredentials({
@@ -26,8 +33,9 @@ try {
 		hostIdFile: path.join(homedir(), ".config", "ditto", "chatgpt-host-id"),
 		log,
 	});
-	const response = await fetch(new URL("/api/models/chatgpt", deployment), {
+	const response = await fetch(endpoint, {
 		method: "POST",
+		redirect: "error",
 		headers: { cookie, "content-type": "application/json" },
 		body: JSON.stringify({ credential: await store.read("openai") }),
 	});
