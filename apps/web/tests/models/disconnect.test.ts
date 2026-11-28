@@ -100,6 +100,13 @@ describe("after a disconnect", () => {
 		// Nothing probes the forgotten key either.
 		await new Promise((resolve) => setTimeout(resolve, 2500));
 		await expect(openCodeRequests(key)).resolves.toEqual(before);
+
+		await connectKey(context);
+		await expect
+			.poll(async () => Object.values(await atBot()), { timeout: 10_000 })
+			.toContainEqual(
+				expect.objectContaining({ message: "Then the summary.", status: "completed" }),
+			);
 	});
 
 	it("refuses a bot's override on that connection rather than moving it", async () => {

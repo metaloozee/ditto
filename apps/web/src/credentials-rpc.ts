@@ -73,7 +73,7 @@ export interface CredentialsRpc {
 	 */
 	disconnect(connectionId: string): Promise<boolean>;
 	/** The credential for one call on `pair`, or on the default pair when it is null. */
-	grant(accountId: string, pair: Pair | null): Promise<Grant>;
+	grant(accountId: string, pair: Pair | null, waitingBot?: string): Promise<Grant>;
 	/**
 	 * A ChatGPT access token for one more try after OpenAI `refused` one before it expired:
 	 * rotated once, unless a rotation already replaced it, or the fault the rotation met. Null

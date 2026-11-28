@@ -148,14 +148,16 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 	}
 
 	async recover(accountId: string): Promise<void> {
-		if (this.#draining) return;
-		if (this.#running) {
+		if (this.#draining || this.#running) {
 			this.#recoverAfter = accountId;
 			return;
 		}
 		this.#draining = true;
 		try {
-			await this.#drain(accountId);
+			do {
+				this.#recoverAfter = null;
+				await this.#drain(accountId);
+			} while (this.#recoverAfter);
 		} finally {
 			this.#draining = false;
 		}
@@ -176,6 +178,7 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 		const release = () => {
 			this.#draining = false;
 			this.#resuming = null;
+			if (this.#recoverAfter) this.ctx.waitUntil(this.recover(accountId));
 		};
 		try {
 			const grant = await this.#grant(accountId, pair);
@@ -218,6 +221,7 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 	async chooseOverride(accountId: string, pair: Pair | null): Promise<boolean> {
 		if (pair === null) {
 			await this.ctx.storage.delete("override");
+			this.ctx.waitUntil(this.recover(accountId));
 			return true;
 		}
 		const { connections, included } = await this.#credentials(accountId).view();
@@ -228,6 +232,7 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 				: Boolean(connection?.models.includes(pair.model));
 		if (!offered) return false;
 		await this.ctx.storage.put("override", { connectionId: pair.connectionId, model: pair.model });
+		this.ctx.waitUntil(this.recover(accountId));
 		return true;
 	}
 
@@ -323,11 +328,11 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 	 * Asks Credentials for a grant, and once more on a fresh stub if the call broke: its object
 	 * may have been reset after saving a rotation, and the saved token answers the retry.
 	 */
-	async #grant(accountId: string, pair: Pair | null): Promise<Grant> {
+	async #grant(accountId: string, pair: Pair | null, waitingBot?: string): Promise<Grant> {
 		try {
-			return await this.#credentials(accountId).grant(accountId, pair);
+			return await this.#credentials(accountId).grant(accountId, pair, waitingBot);
 		} catch {
-			return this.#credentials(accountId).grant(accountId, pair);
+			return this.#credentials(accountId).grant(accountId, pair, waitingBot);
 		}
 	}
 
@@ -366,11 +371,11 @@ export class Bot extends DurableObject<AuthEnv> implements BotRpc {
 
 			// An unfinished turn keeps its pair; a queued message takes the pair the bot uses now.
 			const pair = unfinished?.pair ?? (await this.ctx.storage.get<Pair>("override")) ?? null;
-			const grant = await this.#grant(accountId, pair);
+			const grant = await this.#grant(accountId, pair, next ? this.#botId : undefined);
 			if ("refused" in grant) {
 				// Still faulted: Credentials wakes the bot again.
 				if (grant.refused === "interrupted") {
-					await credentials.recordFault(accountId, this.#botId, grant.pair);
+					if (!(await credentials.recordFault(accountId, this.#botId, grant.pair))) continue;
 					return;
 				}
 				// Its connection is gone: the turn stays interrupted and no longer holds the queue.

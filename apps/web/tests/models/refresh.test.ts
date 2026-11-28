@@ -203,6 +203,47 @@ describe("an expired ChatGPT plan token", () => {
 		60_000,
 	);
 
+	it("reports a stalled rotation body as unavailable", async () => {
+		const { context, workspaceId, bots } = await ownerOfTwo();
+		await importExpired(context);
+		await planNextRefresh({ hold: true });
+		try {
+			await queue(context, workspaceId, bots[0]);
+			await expect(chatgptState(context)).resolves.toBe("Unavailable");
+		} finally {
+			await releaseRefresh();
+		}
+	}, 30_000);
+
+	it("wakes a bot that joined while a recovery probe was rotating the token", async () => {
+		const { context, workspaceId, bots } = await ownerOfTwo();
+		const credential = await importExpired(context);
+		await startRefreshFault({ status: 429, retryAfter: 1800 });
+		const first = await queue(context, workspaceId, bots[0]);
+		await endRefreshFault();
+		await planNextRefresh({ hold: true });
+		const checking = context.request.post("/api/models/chatgpt/check");
+		await expect.poll(() => rotationCount(credential.refresh)).toBe(2);
+		const second = await queue(context, workspaceId, bots[1]);
+		await expect
+			.poll(async () => {
+				const response = await context.request.get("/api/models/__test/stored");
+				const stored = (await response.json()) as Record<string, { bots?: string[] }>;
+				return stored["fault:chatgpt"]?.bots;
+			})
+			.toContain(bots[1]);
+		await releaseRefresh();
+		expect(await (await checking).json()).toEqual({ state: "Connected" });
+		for (const [bot, queued] of [
+			[bots[0], first],
+			[bots[1], second],
+		] as const) {
+			await expect
+				.poll(() => storedTurn(context, workspaceId, bot, queued), { timeout: 10_000 })
+				.toMatchObject({ status: "completed" });
+		}
+	});
+
 	it("never hands the Bot a refresh token, the original or its replacement", async () => {
 		const { context, workspaceId, bots } = await ownerOfTwo();
 		const credential = await importExpired(context);

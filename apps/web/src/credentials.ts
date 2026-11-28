@@ -133,6 +133,7 @@ type Access = { access: string } | { fault: Fault };
  * waiting on it, and are woken on recovery.
  */
 interface StoredFault extends Fault {
+	revision?: string;
 	accountId: string;
 	/** The model the probes ask: the one the first interrupted turn was on. */
 	model: string;
@@ -146,6 +147,7 @@ const connectionKey = (connectionId: string) => `connection:${connectionId}`;
 const faultKey = (connectionId: string) => `fault:${connectionId}`;
 
 /** Probes wait a second, then twice as long after each failure, up to five minutes. */
+const PROVIDER_TIMEOUT_MS = 15_000;
 const PROBE_BASE_MS = 1000;
 const PROBE_MAX_MS = 5 * 60_000;
 
@@ -209,6 +211,7 @@ async function askOpenCode(
 		Object.values(PI_OPENCODE_MODELS).find((each) => each.id === model)?.api === "openai-responses";
 	const response = await fetch(`${base}/${responses ? "responses" : "chat/completions"}`, {
 		method: "POST",
+		signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
 		headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
 		body: JSON.stringify(
 			responses
@@ -317,9 +320,10 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		// A second import replaces the first whole, its refresh token included.
 		await this.ctx.storage.put(connectionKey("chatgpt"), connection);
 		// A fresh sign-in, so whatever the old one left waiting carries on.
-		await this.#clearFault("chatgpt");
 		const [model] = CHATGPT_MODELS;
 		if (model) await this.#defaultIfNone({ connectionId: "chatgpt", model });
+		await this.#clearFault("chatgpt");
+		await this.#wakeQueues();
 		return "imported";
 	}
 
@@ -362,7 +366,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		return this.#sendIncluded(accountId, body);
 	}
 
-	async #sendIncluded(accountId: string, body: string): Promise<Response> {
+	async #sendIncluded(accountId: string, body: string, signal?: AbortSignal): Promise<Response> {
 		const request = JSON.parse(body) as Record<string, unknown>;
 		const send = this.env.AI && createAiBindingFetch(this.env.AI);
 		for (
@@ -374,6 +378,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 				`https://workers-binding.ai/ai-gateway/gateways/${this.env.AI_GATEWAY_ID}/workers-ai/v1/chat/completions`,
 				{
 					method: "POST",
+					signal,
 					// Built here, never taken from the Bot: the gateway bills the metadata's account, and
 					// a provider key in the request would be used instead of the operator's.
 					headers: {
@@ -418,6 +423,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		await this.#defaultIfNone({ connectionId: "opencode", model });
 		// A new key answered, so whatever the old one left waiting carries on.
 		await this.#clearFault("opencode");
+		await this.#wakeQueues();
 		return { connected: true };
 	}
 
@@ -426,6 +432,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 			const included = await this.#includedModel();
 			if (pair.model !== included?.name) return false;
 			await this.ctx.storage.put("defaultPair", { connectionId: INCLUDED, model: included.name });
+			await this.#wakeQueues();
 			return true;
 		}
 		const { connections } = await this.view();
@@ -435,6 +442,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 			connectionId: pair.connectionId,
 			model: pair.model,
 		});
+		await this.#wakeQueues();
 		return true;
 	}
 
@@ -456,7 +464,25 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 		void this.#wake(stored);
 	}
 
-	async grant(accountId: string, pair: Pair | null): Promise<Grant> {
+	async grant(accountId: string, pair: Pair | null, waitingBot?: string): Promise<Grant> {
+		const waiter = waitingBot && `waiting:${waitingBot}`;
+		if (waiter) await this.ctx.storage.put(waiter, accountId);
+		const grant = await this.#resolveGrant(accountId, pair);
+		if (waiter && !("refused" in grant && grant.refused === "no-model")) {
+			await this.ctx.storage.delete(waiter);
+		}
+		return grant;
+	}
+
+	async #wakeQueues(): Promise<void> {
+		const waiting = await this.ctx.storage.list<string>({ prefix: "waiting:" });
+		for (const [key, accountId] of waiting) {
+			await this.ctx.storage.delete(key);
+			this.ctx.waitUntil(this.#bot(key.slice("waiting:".length)).recover(accountId));
+		}
+	}
+
+	async #resolveGrant(accountId: string, pair: Pair | null): Promise<Grant> {
 		const included = await this.#includedModel();
 		const wanted = pair ?? (await this.#defaultPair(included));
 		// Never moved to another source: an included pair gets the included model or nothing.
@@ -504,6 +530,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 			bots: [],
 		};
 		if (fault) {
+			stored.revision = crypto.randomUUID();
 			// A reset time belongs to the limit that gave it.
 			if (fault.state !== stored.state) delete stored.resetsAt;
 			stored.state = fault.state;
@@ -534,12 +561,14 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	/** Probes each source with a fault that is due, and wakes its bots once one answers. */
 	override async alarm(): Promise<void> {
 		const faults = await this.ctx.storage.list<StoredFault>({ prefix: faultKey("") });
+		const wakes: Promise<void>[] = [];
 		for (const [name, stored] of faults) {
 			if (!probed(stored) || stored.probeAt > Date.now()) continue;
 			const { woken } = await this.#probeOnce(name.slice(faultKey("").length), stored);
-			await woken;
+			if (woken) wakes.push(woken);
 		}
 		await this.#schedule();
+		await Promise.all(wakes);
 	}
 
 	/**
@@ -558,16 +587,21 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 							? await this.#probeIncluded(stored)
 							: await this.#probeOpenCode(stored),
 					);
+		const latest = await this.ctx.storage.get<StoredFault>(faultKey(connectionId));
+		if (!latest) return { state: "Connected" };
+		if (latest.revision !== stored.revision || latest.attempt !== stored.attempt) {
+			return { state: latest.state };
+		}
 		if (outcome === "ok") {
 			await this.ctx.storage.delete(faultKey(connectionId));
-			return { state: "Connected", woken: this.#wake(stored) };
+			return { state: "Connected", woken: this.#wake(latest) };
 		}
-		if (outcome && outcome.state !== stored.state) delete stored.resetsAt;
-		if (outcome) Object.assign(stored, outcome);
-		stored.attempt += 1;
-		stored.probeAt = nextProbe(stored.attempt, stored.resetsAt);
-		await this.ctx.storage.put(faultKey(connectionId), stored);
-		return { state: stored.state };
+		if (outcome && outcome.state !== latest.state) delete latest.resetsAt;
+		if (outcome) Object.assign(latest, outcome);
+		latest.attempt += 1;
+		latest.probeAt = nextProbe(latest.attempt, latest.resetsAt);
+		await this.ctx.storage.put(faultKey(connectionId), latest);
+		return { state: latest.state };
 	}
 
 	/** Tells each bot with work waiting on the source that it answers again. */
@@ -607,9 +641,11 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 	async #probeIncluded(stored: StoredFault): Promise<Response | "unreachable" | null> {
 		if (!(await this.#includedModel())) return null;
 		const body = JSON.stringify({ messages: [{ role: "user", content: PROBE }] });
-		const response = await this.#sendIncluded(stored.accountId, body).catch(
-			() => "unreachable" as const,
-		);
+		const response = await this.#sendIncluded(
+			stored.accountId,
+			body,
+			AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+		).catch(() => "unreachable" as const);
 		if (response !== "unreachable") await response.body?.cancel();
 		return response;
 	}
@@ -627,6 +663,7 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 			if (!token) return null;
 			if ("fault" in token) return token.fault;
 			const response = await openaiFetch(this.env.OAUTH_UPSTREAM)(OPENAI_RESPONSES, {
+				signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
 				method: "POST",
 				headers: { authorization: `Bearer ${token.access}`, "content-type": "application/json" },
 				body: JSON.stringify({
@@ -683,7 +720,9 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 
 		this.#rotating = true;
 		try {
+			const signal = AbortSignal.timeout(PROVIDER_TIMEOUT_MS);
 			const answer = await openaiFetch(this.env.OAUTH_UPSTREAM)(OPENAI_TOKEN, {
+				signal,
 				method: "POST",
 				headers: {
 					accept: "application/json",
@@ -696,27 +735,31 @@ export class Credentials extends DurableObject<AuthEnv> implements CredentialsRp
 					resource: OPENAI_RESOURCE,
 				}),
 			}).catch(() => "unreachable" as const);
-			// A disconnect or a newer import while the rotation was out wins over its answer.
-			const current = await this.ctx.storage.get<StoredChatGPT>(connectionKey("chatgpt"));
-			if (current?.signIn.iv !== chatgpt.signIn.iv) {
-				if (answer !== "unreachable") await answer.body?.cancel().catch(() => {});
-				return current ? this.#currentChatGPT(accountId, refused) : null;
-			}
 			const next =
 				answer !== "unreachable" && answer.ok
 					? rotated(await answer.json().catch(() => null), signIn)
 					: undefined;
-			if (!next) {
-				if (answer !== "unreachable") await answer.body?.cancel().catch(() => {});
-				// A limit or an outage is retried; a refused or malformed rotation needs the owner.
-				return { fault: faultOf(answer) ?? { state: "ReconnectNeeded" } };
-			}
-			// The old refresh token is spent now, so the replacement is saved before anyone hears.
-			await this.ctx.storage.put(connectionKey("chatgpt"), {
+			const replacement = next && {
 				...chatgpt,
 				signIn: await seal(this.env.CREDENTIALS_ENCRYPTION_KEY, JSON.stringify(next), scope),
 				expires: next.expires,
-			} satisfies StoredChatGPT);
+			};
+			const key = connectionKey("chatgpt");
+			const unchanged = await this.ctx.storage.transaction(async (txn) => {
+				const current = await txn.get<StoredChatGPT>(key);
+				if (current?.signIn.iv !== chatgpt.signIn.iv) return false;
+				if (replacement) await txn.put(key, replacement);
+				return true;
+			});
+			if (!unchanged || !next) {
+				if (answer !== "unreachable") await answer.body?.cancel().catch(() => {});
+				if (!unchanged) return this.#currentChatGPT(accountId, refused);
+				return {
+					fault: signal.aborted
+						? { state: "Unavailable" }
+						: (faultOf(answer) ?? { state: "ReconnectNeeded" }),
+				};
+			}
 			// Durable, not just queued: an object reset now must not lose the only valid pair.
 			await this.ctx.storage.sync();
 			if (

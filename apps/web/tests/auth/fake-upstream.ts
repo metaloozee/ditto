@@ -513,15 +513,20 @@ export async function startFakeUpstream() {
 			chatgptTokens.splice(index, keepOld ? 0 : 1, issued);
 			refresh.issued = issued;
 			if (plan && "lose" in plan) return void req.socket.destroy();
+			res.writeHead(200, { "content-type": "application/json" });
+			// A response can be in flight after fetch resolves but before the token body arrives.
+			res.write(" ");
 			const answer = () =>
-				json(200, {
-					access_token: issued.access,
-					refresh_token: issued.refresh,
-					id_token: "simulated.id.token",
-					token_type: "Bearer",
-					expires_in: 3600,
-					scope: "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct",
-				});
+				res.end(
+					JSON.stringify({
+						access_token: issued.access,
+						refresh_token: issued.refresh,
+						id_token: "simulated.id.token",
+						token_type: "Bearer",
+						expires_in: 3600,
+						scope: "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct",
+					}),
+				);
 			if (plan && "hold" in plan) return void chatgptHeldRefreshes.push(answer);
 			return answer();
 		}
