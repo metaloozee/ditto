@@ -39,7 +39,7 @@ The Codex backend that Pi's `openai-codex` provider calls (`https://chatgpt.com/
 
 **Unresolved limits:**
 
-- The second local-date baseline passed about nine hours after the last Day 1 run. Refresh after a full day remains unverified. The free-tier probe (#30) repeated its Day 1 result on the second local date.
+- The second local-date baseline passed about nine hours after the last Day 1 run. A refresh 24 hours after import succeeded in the Credentials Durable Object on 2026-11-27, by inference ([#67](#deployed-model-access-67)). The free-tier probe (#30) repeated its Day 1 result on the second local date.
 - **Pi OAuth flows do not load from a bundle in workerd.** Fallback selected: call `registerLazyOAuthFlows()` from `@earendil-works/pi-ai/lazy-oauth` at Worker startup, as `model-worker.ts` does. Pi documents that module as Node-only. Refresh passed with Pi 1.6.0 against both the simulator and the live endpoint in local workerd. Re-run `feasibility/model-worker.test.ts` on every Pi bump.
 - **A warm Pi trial request used about 12 to 16ms of CPU, above the free plan's 10ms** (first turn after start 45 to 90ms; simulated provider, upper bound). Consequence: the Pi Worker route needs Workers Paid. On the free plan the only Worker-side check is the plain-`fetch` probe (#30), which proves the network, not the runtime. Deployed on Workers Paid (#31), a whole trial request with a live OpenCode reply used 62 to 118ms. Real replies are longer than "pong", so longer turns are still unmeasured.
 - Sign-in cannot run in a Worker (Pi's flows need `node:http` or a terminal). Consequence: a hosted bot needs a sign-in step outside the Worker, which later work designs.
@@ -546,6 +546,49 @@ Every trial request was attributed: 9 of 9 for each model, read back through the
 - **Removed:** Workers `ditto-paid-pi-trial-model-trial` and `ditto-paid-pi-trial-cpu-tail`, the `Bot` Durable Object namespace with the sign-in it held, the AI Gateway with its logs, their KV namespace and run-key secret, and the local paid-stage sign-ins and run key
 
 The teardown also deleted the Sign in with ChatGPT credential transferred to the Bot for #34. #34's deployed run needs a fresh `pnpm feasibility:paid deploy` and `transfer-siwc` before `run --route siwc`.
+
+#### Deployed model access (#67)
+
+The checks local tests cannot make, run as built on the disposable stage `m67` (Workers Paid, `INCLUDED_MODEL=on`, `OPEN_SOURCE_LICENSE` recorded, `OPENAI_HOSTED_APPROVAL` empty) with the owner's own accounts and keys. Turns went through the signed-in home page, so each one crossed the workspace gateway, the Bot object and the account's Credentials object. CPU and wall times are each invocation's own, from `wrangler tail`. Ditto account IDs appear as `<account A>` and `<account B>`.
+
+###### 2026-11-26 · OpenCode API key turn through the Bot Durable Object (stage `m67`, self-deployed) · pass
+
+- **Route:** account A's OpenCode API key, model `deepseek-v4.1-flash`, chat completions. "Reply with pong." got "pong" at 18:23:36 UTC.
+- **CPU:** the Bot's `send` took 35ms of CPU and 1371ms of wall time. The Credentials grant took 0ms of CPU. A run on the stage's earlier deploy at 18:04:55 matched it (35ms CPU, 1387ms wall).
+- Tail logged the Bot's `send` outcome as `canceled`, though the reply streamed in full. That is probably the stream closing after the reply; it is unverified.
+
+###### 2026-11-26 · included model from two Ditto accounts, attributed in AI Gateway (stage `m67`) · pass
+
+- **Route:** `@cf/deepseek-ai/deepseek-v4.1-flash-1017` on Workers AI through the stage's AI Gateway (`v1/chat/completions`), billed to the operator's Cloudflare account. Each turn called `current_time` and answered with the time.
+- **Account A** at 18:18:14 and 18:18:16 UTC: gateway logs `01M8CH8QC7FKE73AHP35H2CT5G` and `01M8CH8S0QCDFQCC8SNCR5T3E0`, both HTTP 200, metadata `dittoAccount` = `<account A>`. The Bot's `send` took 40ms of CPU and 4082ms of wall time.
+- **Account B** at 18:23:11 UTC: gateway log `01M8CHHRX2XF8T7NFH40GNJC2X`, HTTP 200, `dittoAccount` = `<account B>`.
+
+###### 2026-11-27 · ChatGPT plan refresh 24 hours after import, in the Credentials Durable Object (stage `m67`) · pass, inferred
+
+- **Setup:** `pnpm chatgpt:import` imported the plan at 2026-11-26 18:31:20 UTC (client `dynamic_agent_client`, scope including `chatgpt.tokens.use.direct`). Nothing rotated the token after that: the later grants that day reused it, and no turn used the plan until this run.
+- **Run:** at 2026-11-27 18:33:09 UTC, 24h 1m 49s after the import, account A sent "Reply with pong." on `gpt-5.6-luna`.
+- **Refresh:** the Credentials grant took 3ms of CPU and 1041ms of wall time, against under 5ms of wall time for every grant that reused a token. That is the call to OpenAI's refresh-token grant. Settings stayed Connected, and a failed rotation would have shown Reconnect needed or a limit. The Bot then spent about 4.4s on OpenAI, which answered at the model rather than refusing the token. The stored expiry was not read: that check exists only on the test stage.
+- **Reply:** none. OpenAI answered "The ChatGPT user has reached their Subscription Sharing usage limit…", as on the first turns of 2026-11-26. The Bot's `send` took 30ms of CPU and 5442ms of wall time.
+- **Gaps found:** the page showed "The model stopped answering", and Settings kept the plan Connected. #18 and #65 expect Limit reached and a resumable turn. This plan-usage error is also the condition [Model route](#model-route) names for keeping the ChatGPT plan local-only, so the owner should review that consequence.
+- **Also seen on 2026-11-26:** `gpt-5.4-mini` was refused with `model_not_in_accessible_catalog` ("not supported when using Codex with a ChatGPT account").
+
+###### 2026-11-27 · Responses call on a hosted-mode stage, ChatGPT plan still gated (stage `m67`, hosted) · pass
+
+- **Deploy:** the stage was redeployed with `DEPLOYMENT_MODE=hosted` and `OPENAI_HOSTED_APPROVAL` still empty. The plan changed only that binding.
+- **Gate before the call:** Settings showed the ChatGPT plan as "Not offered on this deployment."
+- **Route:** account A's OpenCode API key, model `gpt-6-luna`, which Pi's catalogue serves on `openai-responses` at `https://opencode.ai/inference/openai/v1`. "Reply with pong." got "pong" at 19:09:52 UTC. The Bot's `send` took 38ms of CPU and 843ms of wall time; the Credentials grant took 0ms of CPU.
+- **Gate after the call:** still "Not offered on this deployment." A working call did not open hosted onboarding.
+
+###### 2026-11-27 · full suite before the last ticket of #18 merges · pass
+
+- `vp run verify`: check, then 53 test files with 418 tests, then the build. Every step passed in 1442s of tests.
+
+###### 2026-11-27 · stage `m67` torn down · pass
+
+- **Date:** 2026-11-27, 19:45 UTC
+- **Command:** `alchemy destroy --stage m67 --env-file .env.m67 --profile ditto --yes`, 5 of 5 resources deleted
+- **Removed:** Worker `ditto-app-m67` with its Bot, Credentials and Workspace Durable Objects, which held the owner's encrypted OpenCode key and ChatGPT sign-in; Container `ditto-workspace-m67-y4wnwliovn75ozqi`; the auth D1 database; the files R2 bucket; the AI Gateway with its logs. Afterwards the stage URL answered 404, and `wrangler` listed no m67 D1 database, R2 bucket or container.
+- **Left over:** the AI Gateway `ditto-gateway-m67-jz7y7duriadtyq6j`, orphaned by a failed redeploy on 2026-11-26. It holds request logs, not credentials, and is deleted in the dashboard. The ChatGPT session stays valid at OpenAI until it expires or the owner revokes it.
 
 ## Desktop provider
 
@@ -1624,20 +1667,21 @@ Candidate instance size, resource inventory and package versions. Screen capacit
 
 Every trial under #16 has run. The commands stay in each trial's section for repeats.
 
-| #   | Trial                                           | Result                                                                            | Decides                                                  |
-| --- | ----------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| #25 | Local baseline, ChatGPT plan and OpenCode       | passed on two local dates                                                         | provider behaviour from the home network                 |
-| #26 | Local workerd, both routes                      | passed                                                                            | Pi in workerd, CPU                                       |
-| #27 | Chrome behind the egress filter, local          | passed                                                                            | the filter's shape                                       |
-| #28 | WebSocket and HTTP/2 through the filter, local  | passed                                                                            | protocols through the filter                             |
-| #29 | Representative logins, local                    | Google and LinkedIn work with take-over; protected site skipped (no test account) | per-workflow grade behind the filter                     |
-| #30 | Free-tier probe from Cloudflare, two dates      | failed: OpenAI's edge refused the Codex backend; torn down                        | whether OpenAI accepts Cloudflare's network              |
-| #31 | Deployed Pi trial                               | OpenCode passed; Codex backend refused; torn down                                 | the Worker model route and its real CPU                  |
-| #32 | Cloudflare Containers trial                     | checks passed; Google and LinkedIn work with take-over                            | `NET_ADMIN`, identity, logins on Cloudflare              |
-| #34 | Sign in with ChatGPT, local then Durable Object | passed on 2026-11-23 and 2026-11-24                                               | ChatGPT plan for self-deployed Ditto                     |
-| #35 | Workers AI tool calling from a Durable Object   | DeepSeek V4.1 Flash and GLM-5.3 passed                                            | the included model (ADR-0011)                            |
-| #36 | Browser Run as the workspace browser            | rejected (ADR-0012); torn down                                                    | browser provider                                         |
-| #37 | Browser health on the shared computer           | every criterion has an entry; Google's restored login lasted hours, not a day     | logins across stops, size, idle, sandbox, DevTools, view |
+| #   | Trial                                           | Result                                                                                                                                                | Decides                                                  |
+| --- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| #25 | Local baseline, ChatGPT plan and OpenCode       | passed on two local dates                                                                                                                             | provider behaviour from the home network                 |
+| #26 | Local workerd, both routes                      | passed                                                                                                                                                | Pi in workerd, CPU                                       |
+| #27 | Chrome behind the egress filter, local          | passed                                                                                                                                                | the filter's shape                                       |
+| #28 | WebSocket and HTTP/2 through the filter, local  | passed                                                                                                                                                | protocols through the filter                             |
+| #29 | Representative logins, local                    | Google and LinkedIn work with take-over; protected site skipped (no test account)                                                                     | per-workflow grade behind the filter                     |
+| #30 | Free-tier probe from Cloudflare, two dates      | failed: OpenAI's edge refused the Codex backend; torn down                                                                                            | whether OpenAI accepts Cloudflare's network              |
+| #31 | Deployed Pi trial                               | OpenCode passed; Codex backend refused; torn down                                                                                                     | the Worker model route and its real CPU                  |
+| #32 | Cloudflare Containers trial                     | checks passed; Google and LinkedIn work with take-over                                                                                                | `NET_ADMIN`, identity, logins on Cloudflare              |
+| #34 | Sign in with ChatGPT, local then Durable Object | passed on 2026-11-23 and 2026-11-24                                                                                                                   | ChatGPT plan for self-deployed Ditto                     |
+| #35 | Workers AI tool calling from a Durable Object   | DeepSeek V4.1 Flash and GLM-5.3 passed                                                                                                                | the included model (ADR-0011)                            |
+| #36 | Browser Run as the workspace browser            | rejected (ADR-0012); torn down                                                                                                                        | browser provider                                         |
+| #37 | Browser health on the shared computer           | every criterion has an entry; Google's restored login lasted hours, not a day                                                                         | logins across stops, size, idle, sandbox, DevTools, view |
+| #67 | Model access on a deployed stage                | OpenCode, included model and hosted Responses passed; ChatGPT refresh after 24h passed by inference, but the turn hit the plan-usage limit; torn down | model access as built                                    |
 
 No trial is blocked by the free tier: the owner moved to Workers Paid, and #31, #32, #34, #35 and #37 ran on it.
 
@@ -1649,7 +1693,6 @@ No trial is blocked by the free tier: the owner moved to Workers Paid, and #31, 
 - **The protected-site workflow** (a Turnstile-protected site, such as the Cloudflare dashboard) on Cloudflare, with a test account.
 - **Screen capacity under real work,** before any capacity commitment.
 - **Turn CPU with real-length replies** in the Bot Durable Object.
-- **A refresh after a full day or more** in the Bot. The longest observed so far is about 12.5 hours.
 - **First-start image pull time** on Cloudflare.
 - **The `enableInternet: false` intercept filter,** built and run through the allow, deny, WebSocket and HTTP/2 checks. Only needed if Cloudflare withdraws `NET_ADMIN`.
 - **Debian packages pinned by snapshot,** and the suites rerun.
