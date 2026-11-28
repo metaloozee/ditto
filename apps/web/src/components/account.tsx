@@ -92,10 +92,13 @@ export function SettingsView({
 	account,
 	onLink,
 	onSignOut,
+	modelAccess,
 }: {
 	account: Account;
 	onLink: (method: Method) => void;
 	onSignOut: () => void;
+	/** The model access section, below sign-in methods. */
+	modelAccess?: React.ReactNode;
 }) {
 	return (
 		<div className="flex min-h-dvh flex-col">
@@ -133,6 +136,7 @@ export function SettingsView({
 						))}
 					</Card>
 				</section>
+				{modelAccess}
 			</main>
 		</div>
 	);

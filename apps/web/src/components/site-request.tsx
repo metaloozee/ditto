@@ -217,7 +217,7 @@ export function SiteRequest({
  * Animates the card's height between steps and blurs the new step in, so a change reads as the
  * same card settling rather than one card swapped for another.
  */
-function Morph({ id, children }: { id: string; children: React.ReactNode }) {
+export function Morph({ id, children }: { id: string; children: React.ReactNode }) {
 	const inner = useRef<HTMLDivElement>(null);
 	const [height, setHeight] = useState<number>();
 	useEffect(() => {
@@ -244,7 +244,7 @@ function Morph({ id, children }: { id: string; children: React.ReactNode }) {
 	);
 }
 
-function Step({
+export function Step({
 	head,
 	children,
 	actions,
@@ -277,7 +277,7 @@ function RequestHead({ host }: { host: string }) {
 	);
 }
 
-function Actions({ narrow, children }: { narrow: boolean; children: React.ReactNode }) {
+export function Actions({ narrow, children }: { narrow: boolean; children: React.ReactNode }) {
 	return (
 		<div
 			className={cn(

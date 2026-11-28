@@ -1,4 +1,5 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
+import type { AiBinding } from "@earendil-works/pi-ai/api/cloudflare-ai-binding";
 import { betterAuth } from "better-auth";
 import {
 	addOAuthServerContext,
@@ -25,9 +26,15 @@ type TestOnly =
 	| "CODE_EXPIRES_IN"
 	| "CODE_RESEND_IN"
 	| "COMPUTER_IDLE_SECONDS"
+	| "OPENCODE_BASE_URL"
 	| "TEST_HOOKS";
 
-export type AuthEnv = Omit<WebsiteEnv, TestOnly> & Partial<Record<TestOnly, string>>;
+/** Bound only where the included model can run: Workers AI, or the test stage's stand-in. */
+type IncludedModelBindings = { AI?: AiBinding; AI_GATEWAY_ID?: string };
+
+export type AuthEnv = Omit<WebsiteEnv, TestOnly> &
+	Partial<Record<TestOnly, string>> &
+	IncludedModelBindings;
 
 const WEEK = 60 * 60 * 24 * 7;
 

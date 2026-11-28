@@ -1,5 +1,5 @@
 {
-  "include": ["src/worker.ts", "src/workspace.ts"],
+  "include": ["src/worker.ts", "src/workspace.ts", "src/credentials.ts", "src/bot.ts"],
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",

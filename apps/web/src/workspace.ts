@@ -1,5 +1,4 @@
 import { Container } from "@cloudflare/containers";
-import { DurableObject } from "cloudflare:workers";
 import { and, eq, notInArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 
@@ -246,7 +245,15 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 
 	async members(): Promise<Member[]> {
 		const chiefOfStaff = await this.ctx.storage.get<ChiefOfStaff>("chiefOfStaff");
-		return chiefOfStaff ? [chiefOfStaff] : [];
+		const specialists = (await this.ctx.storage.get<Member[]>("specialists")) ?? [];
+		return chiefOfStaff ? [chiefOfStaff, ...specialists] : specialists;
+	}
+
+	async addSpecialist(member: Member): Promise<void> {
+		if (this.env.TEST_HOOKS !== "on") throw new Error("Specialists can't be created yet");
+		const specialists = (await this.ctx.storage.get<Member[]>("specialists")) ?? [];
+		await this.ctx.storage.put("specialists", [...specialists, member]);
+		await this.reconcileBotList();
 	}
 
 	/**
@@ -503,18 +510,5 @@ export class Workspace extends Container<AuthEnv> implements WorkspaceRpc {
 		this.deleteSchedules("lifetimeEnded");
 		// A pass belongs to one instance, so it never carries over to the next.
 		await this.ctx.storage.delete(["instancePolicy", "isolation"]);
-	}
-}
-
-export class Bot extends DurableObject {
-	override fetch(): Response {
-		return Response.json({ object: "Bot" });
-	}
-}
-
-/** One per account, holding its model connections. */
-export class Credentials extends DurableObject {
-	override fetch(): Response {
-		return Response.json({ object: "Credentials" });
 	}
 }

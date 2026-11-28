@@ -6,7 +6,13 @@ import type { BrowserContext, Page } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
 import { COOKIE_ENCRYPTION_KEY, SESSION_EXPIRES_IN } from "../auth/setup.ts";
-import { appUrl, continueWithGitHub, gitHubUser, newVisitor } from "../auth/visitor.ts";
+import {
+	appUrl,
+	continueWithGitHub,
+	gitHubUser,
+	keepSignedIn,
+	newVisitor,
+} from "../auth/visitor.ts";
 
 interface WorkspaceAnswer {
 	object: string;
@@ -122,6 +128,7 @@ describe("the workspace gateway", () => {
 
 	it("reports to the owner that every named binding resolves, without revealing the cookie key", async () => {
 		const alice = await owner();
+		keepSignedIn(alice.context);
 		const bob = await owner();
 
 		const answer = await alice.context.request.get(`${workspacePath(alice.workspaceId)}/bindings`);
@@ -147,6 +154,7 @@ describe("the workspace gateway", () => {
 
 	it("refuses another account's workspace exactly as it refuses an unknown one, before forwarding", async () => {
 		const alice = await owner();
+		keepSignedIn(alice.context);
 		const bob = await owner();
 		const before = await reached(alice.context, alice.workspaceId);
 

@@ -1,6 +1,15 @@
 {
   "include": ["**/*.ts", "**/*.tsx", "../../alchemy.run.ts", "../../vite.config.ts"],
-  "exclude": ["node_modules", "dist", ".alchemy", ".wrangler", "src/worker.ts", "src/workspace.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".alchemy",
+    ".wrangler",
+    "src/worker.ts",
+    "src/workspace.ts",
+    "src/credentials.ts",
+    "src/bot.ts"
+  ],
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",

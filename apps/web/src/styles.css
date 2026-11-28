@@ -455,6 +455,72 @@
   animation: panel-in 300ms var(--ease-drawer) both;
 }
 
+/*
+ * The floating side sheet settles in like a message: a fade, a short slide from its edge, a
+ * 0.98 scale and a 4px blur on the strong ease-out. Closing plays it back faster. A swipe
+ * carries the sheet off the edge instead, at the speed of the flick. Transitions, not
+ * keyframes, so a close mid-open reverses from where it is.
+ */
+@utility sheet-motion {
+  transform-origin: right center;
+  transform: translateX(var(--drawer-swipe-movement-x, 0px));
+  transition-property: transform, opacity, filter;
+  transition-duration: 420ms;
+  transition-timing-function: var(--ease-out-strong);
+  &[data-starting-style],
+  &[data-ending-style] {
+    opacity: 0;
+    transform: translateX(2rem) scale(0.98);
+    filter: blur(4px);
+  }
+  &[data-ending-style] {
+    transition-duration: 220ms;
+  }
+  &[data-ending-style][data-swipe-dismiss] {
+    opacity: 1;
+    filter: none;
+    transform: translateX(calc(100% + 1rem));
+    transition-duration: calc(var(--drawer-swipe-strength, 1) * 400ms);
+  }
+  &[data-swiping] {
+    transition-duration: 0ms;
+  }
+  [dir="rtl"] & {
+    transform-origin: left center;
+  }
+}
+
+/* Popovers that answer a choice, such as the pair select: the same motion, from the trigger. */
+@utility pop-motion {
+  transform-origin: var(--transform-origin);
+  transition-property: transform, opacity, filter;
+  transition-duration: 240ms;
+  transition-timing-function: var(--ease-out-strong);
+  &[data-starting-style],
+  &[data-ending-style] {
+    opacity: 0;
+    transform: scale(0.96);
+    filter: blur(4px);
+  }
+  &[data-ending-style] {
+    transition-duration: 150ms;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-motion,
+  .pop-motion {
+    transition-property: opacity;
+  }
+  .sheet-motion[data-starting-style],
+  .sheet-motion[data-ending-style],
+  .pop-motion[data-starting-style],
+  .pop-motion[data-ending-style] {
+    transform: none;
+    filter: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .message-in,
   .panel-in,

@@ -1,0 +1,237 @@
+import type { BrowserContext, Page } from "playwright";
+import { describe, expect, it } from "vite-plus/test";
+
+import { newVisitor, open } from "../auth/visitor.ts";
+import { openCodeRequests, releaseOpenCodeTurn, replyToNextOpenCodeTurn } from "./opencode.ts";
+import {
+	addSpecialist,
+	botPath,
+	chooseDefault,
+	connectKey,
+	messages,
+	owner,
+	PHONE,
+	post,
+	send,
+} from "./owner.ts";
+
+async function setOverride(
+	context: BrowserContext,
+	workspaceId: string,
+	botId: string,
+	override: unknown,
+) {
+	const response = await context.request.put(`${botPath(workspaceId, botId)}/model`, {
+		data: { override },
+	});
+	return response.status();
+}
+
+async function override(context: BrowserContext, workspaceId: string, botId: string) {
+	const response = await context.request.get(`${botPath(workspaceId, botId)}/model`);
+	return { status: response.status(), body: (await response.json()) as unknown };
+}
+
+/** The model each turn named at the upstream, after the connect check. */
+async function turnModels(key: string) {
+	return (await openCodeRequests(key)).slice(1).map((request) => request.model);
+}
+
+const botSettings = (page: Page) => page.getByRole("dialog", { name: "Ditto’s settings" });
+
+/** The answer to the next save of a bot's own pair from bot settings. */
+const savedOverride = (page: Page) =>
+	page.waitForResponse(
+		(response) => response.url().endsWith("/model") && response.request().method() === "PUT",
+	);
+
+describe("a bot's pair", () => {
+	it("is the default without an override and its own with one, observed at the upstream", async () => {
+		const { context, workspaceId, botId } = await owner();
+		const key = await connectKey(context, "deepseek-v4.1-flash");
+		const specialist = await addSpecialist(context, workspaceId);
+		const pinned = { connectionId: "opencode", model: "glm-5.3-flash" };
+		expect(await setOverride(context, workspaceId, specialist, pinned)).toBe(204);
+
+		expect((await post(context, workspaceId, botId, "Plan my day")).status).toBe(200);
+		expect((await post(context, workspaceId, specialist, "Find sources")).status).toBe(200);
+		await expect(turnModels(key)).resolves.toEqual(["deepseek-v4.1-flash", "glm-5.3-flash"]);
+
+		// A new default reaches only the bot that inherits it.
+		await chooseDefault(context, { connectionId: "opencode", model: "glm-5.3" });
+		expect((await post(context, workspaceId, botId, "And tomorrow?")).status).toBe(200);
+		expect((await post(context, workspaceId, specialist, "More sources")).status).toBe(200);
+		await expect(turnModels(key)).resolves.toEqual([
+			"deepseek-v4.1-flash",
+			"glm-5.3-flash",
+			"glm-5.3",
+			"glm-5.3-flash",
+		]);
+
+		// Clearing the override hands the bot back to the default.
+		expect(await setOverride(context, workspaceId, specialist, null)).toBe(204);
+		await expect(override(context, workspaceId, specialist)).resolves.toEqual({
+			status: 200,
+			body: { override: null },
+		});
+		expect((await post(context, workspaceId, specialist, "Once more")).status).toBe(200);
+		await expect(turnModels(key)).resolves.toHaveLength(5);
+		expect((await turnModels(key)).at(-1)).toBe("glm-5.3");
+	});
+
+	it("stays on its starting pair while it streams, and the next turn takes the new one", async () => {
+		const { context, workspaceId, botId } = await owner();
+		const key = await connectKey(context, "deepseek-v4.1-flash");
+		await replyToNextOpenCodeTurn({ deltas: ["Working on it."], hold: true });
+
+		const streaming = post(context, workspaceId, botId, "Draft the weekly update.");
+		await expect.poll(() => turnModels(key)).toEqual(["deepseek-v4.1-flash"]);
+		// Both the default and the bot's own pair change mid-turn.
+		await chooseDefault(context, { connectionId: "opencode", model: "glm-5.3" });
+		expect(
+			await setOverride(context, workspaceId, botId, {
+				connectionId: "opencode",
+				model: "glm-5.3-flash",
+			}),
+		).toBe(204);
+		await releaseOpenCodeTurn(key);
+
+		const { status, body } = await streaming;
+		expect(status).toBe(200);
+		expect(body).toContain('"pair":{"connectionId":"opencode","model":"deepseek-v4.1-flash"}');
+		expect(body).toContain('"status":"completed"');
+		const stored = await context.request.get(`${botPath(workspaceId, botId)}/__test/stored`);
+		const turns = Object.entries((await stored.json()) as Record<string, unknown>).filter(
+			([name]) => name.startsWith("turn:"),
+		);
+		expect(turns.map(([, turn]) => turn)).toEqual([
+			expect.objectContaining({
+				pair: { connectionId: "opencode", model: "deepseek-v4.1-flash" },
+				reply: "Working on it.",
+				status: "completed",
+			}),
+		]);
+
+		expect((await post(context, workspaceId, botId, "Next one")).status).toBe(200);
+		await expect(turnModels(key)).resolves.toEqual(["deepseek-v4.1-flash", "glm-5.3-flash"]);
+	});
+
+	it("is refused unless it is a complete pair the account offers", async () => {
+		const { context, workspaceId, botId } = await owner();
+		await connectKey(context);
+		const refused = [
+			{ connectionId: "opencode" },
+			{ model: "glm-5.3-flash" },
+			{ connectionId: "opencode", model: "" },
+			{ connectionId: "", model: "glm-5.3-flash" },
+			"opencode",
+		];
+		for (const pair of refused) {
+			expect(await setOverride(context, workspaceId, botId, pair)).toBe(400);
+		}
+		const unknown = [
+			{ connectionId: "opencode", model: "gpt-0" },
+			{ connectionId: "chatgpt", model: "gpt-5.5" },
+		];
+		for (const pair of unknown) {
+			expect(await setOverride(context, workspaceId, botId, pair)).toBe(404);
+		}
+		await expect(override(context, workspaceId, botId)).resolves.toEqual({
+			status: 200,
+			body: { override: null },
+		});
+	});
+
+	it("cannot be read or changed from another account", async () => {
+		const alice = await owner();
+		const bob = await owner();
+		await connectKey(alice.context);
+		await connectKey(bob.context);
+		const pinned = { connectionId: "opencode", model: "glm-5.3-flash" };
+		expect(await setOverride(alice.context, alice.workspaceId, alice.botId, pinned)).toBe(204);
+		const anonymous = await newVisitor();
+
+		const reads = [
+			override(bob.context, alice.workspaceId, alice.botId),
+			override(bob.context, bob.workspaceId, alice.botId),
+		];
+		for (const { status } of await Promise.all(reads)) expect(status).toBe(404);
+		const other = { connectionId: "opencode", model: "glm-5.3" };
+		await expect(setOverride(bob.context, alice.workspaceId, alice.botId, other)).resolves.toBe(
+			404,
+		);
+		await expect(setOverride(bob.context, bob.workspaceId, alice.botId, null)).resolves.toBe(404);
+		await expect(override(anonymous.context, alice.workspaceId, alice.botId)).resolves.toEqual(
+			expect.objectContaining({ status: 401 }),
+		);
+
+		await expect(override(alice.context, alice.workspaceId, alice.botId)).resolves.toEqual({
+			status: 200,
+			body: { override: pinned },
+		});
+	});
+});
+
+describe("bot settings", () => {
+	it("open as a dialog from the gear, and the chosen pair survives a reload and eviction", async () => {
+		const { page, context, workspaceId, botId } = await owner();
+		const key = await connectKey(context, "deepseek-v4.1-flash");
+
+		await open(page, "/?panel=computer");
+		await page.getByRole("button", { name: "Ditto’s settings" }).click();
+		const sheet = botSettings(page);
+		await sheet.waitFor();
+		await expect(sheet.getAttribute("data-side")).resolves.toBe("end");
+		await sheet.getByText("deepseek-v4.1-flash · OpenCode").waitFor();
+		// Choosing for the bot starts it on the default pair, then the owner picks another.
+		const pinnedToDefault = savedOverride(page);
+		await sheet.getByText("Choose for this bot").click();
+		expect((await pinnedToDefault).status()).toBe(204);
+		await sheet.getByRole("button", { name: "Ditto’s model" }).click();
+		const saved = savedOverride(page);
+		await page.getByRole("option", { name: "glm-5.3-flash", exact: true }).click();
+		expect((await saved).status()).toBe(204);
+		await expect(sheet.getByRole("button", { name: "Ditto’s model" }).textContent()).resolves.toBe(
+			"glm-5.3-flash · OpenCode",
+		);
+
+		await context.request.post(`${botPath(workspaceId, botId)}/__test/evict`);
+		await open(page, "/?panel=computer");
+		await page.getByRole("button", { name: "Ditto’s settings" }).click();
+		await expect(
+			botSettings(page).getByRole("radio", { name: "Choose for this bot" }).isChecked(),
+		).resolves.toBe(true);
+		await expect(
+			botSettings(page).getByRole("button", { name: "Ditto’s model" }).textContent(),
+		).resolves.toBe("glm-5.3-flash · OpenCode");
+		await page.keyboard.press("Escape");
+		await botSettings(page).waitFor({ state: "hidden" });
+
+		await send(page, "Which model is this?");
+		await messages(page).getByText("pong").waitFor();
+		await expect(turnModels(key)).resolves.toEqual(["glm-5.3-flash"]);
+	});
+
+	it("open as a drawer on a phone and hand the bot back to the default", async () => {
+		const { page, context, workspaceId, botId } = await owner(PHONE);
+		const key = await connectKey(context, "deepseek-v4.1-flash");
+		const pinned = { connectionId: "opencode", model: "glm-5.3-flash" };
+		expect(await setOverride(context, workspaceId, botId, pinned)).toBe(204);
+
+		await open(page, "/?panel=computer");
+		await page.getByRole("button", { name: "Ditto’s settings" }).click();
+		const drawer = botSettings(page);
+		await drawer.waitFor();
+		await expect(drawer.getAttribute("data-side")).resolves.toBeNull();
+		const saved = savedOverride(page);
+		await drawer.getByText("Use the default").click();
+		expect((await saved).status()).toBe(204);
+		await expect(override(context, workspaceId, botId)).resolves.toEqual({
+			status: 200,
+			body: { override: null },
+		});
+
+		expect((await post(context, workspaceId, botId, "Back on the default?")).status).toBe(200);
+		await expect(turnModels(key)).resolves.toEqual(["deepseek-v4.1-flash"]);
+	});
+});

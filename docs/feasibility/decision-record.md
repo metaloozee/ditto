@@ -39,14 +39,14 @@ The Codex backend that Pi's `openai-codex` provider calls (`https://chatgpt.com/
 
 **Unresolved limits:**
 
-- The second local-date baseline passed about nine hours after the last Day 1 run. Refresh after a full day remains unverified. The free-tier probe (#30) repeated its Day 1 result on the second local date.
+- The second local-date baseline passed about nine hours after the last Day 1 run. A refresh 24 hours after import succeeded in the Credentials Durable Object on 2026-11-27, by inference ([#67](#deployed-model-access-67)). The free-tier probe (#30) repeated its Day 1 result on the second local date.
 - **Pi OAuth flows do not load from a bundle in workerd.** Fallback selected: call `registerLazyOAuthFlows()` from `@earendil-works/pi-ai/lazy-oauth` at Worker startup, as `model-worker.ts` does. Pi documents that module as Node-only. Refresh passed with Pi 1.6.0 against both the simulator and the live endpoint in local workerd. Re-run `feasibility/model-worker.test.ts` on every Pi bump.
 - **A warm Pi trial request used about 12 to 16ms of CPU, above the free plan's 10ms** (first turn after start 45 to 90ms; simulated provider, upper bound). Consequence: the Pi Worker route needs Workers Paid. On the free plan the only Worker-side check is the plain-`fetch` probe (#30), which proves the network, not the runtime. Deployed on Workers Paid (#31), a whole trial request with a live OpenCode reply used 62 to 118ms. Real replies are longer than "pong", so longer turns are still unmeasured.
 - Sign-in cannot run in a Worker (Pi's flows need `node:http` or a terminal). Consequence: a hosted bot needs a sign-in step outside the Worker, which later work designs.
 - Pi's WebSocket transport is unused in workerd (headers go in a constructor option workerd does not take). Consequence: SSE only, without Pi's WebSocket cached-context mode. Read from Pi's code, not exercised.
 - The harness swaps the global `fetch` per trial. Consequence: one trial at a time per isolate. Production code must pass `fetch` explicitly or isolate turns.
 - **CPU in a Durable Object** was 73 to 134ms per whole trial request for Sign in with ChatGPT (#34), within Workers Paid's 30s default. Real replies are longer than "pong", so turn CPU at length is still unmeasured.
-- **The supported ChatGPT plan flow restricts requests.** It requires `store: false` and `stream: true` and rejects `temperature`, `max_output_tokens`, `previous_response_id` over HTTP and system-role items. On a bare turn Pi sent only `model`, `input`, `stream`, `store` and `reasoning` (#34). The trial had no system prompt, so whether Pi sends a bot's instructions as a system-role item is untested: a remaining experiment. Access tokens last 1 hour and refresh tokens 30 days, renewed on each refresh, per OpenAI's [token reference](https://developers.openai.com/siwc/token-sharing-open-source/token-reference).
+- **The supported ChatGPT plan flow restricts requests.** It requires `store: false` and `stream: true` and rejects `temperature`, `max_output_tokens`, `previous_response_id` over HTTP and system-role items. On a bare turn Pi sent only `model`, `input`, `stream`, `store` and `reasoning` (#34). A bot's instructions go out as a `developer` item, because every model Ditto offers on this route is a reasoning model, so Pi stays the client (#64, against the simulator; see [A bot's instructions (#64)](#a-bots-instructions-64)). Access tokens last 1 hour and refresh tokens 30 days, renewed on each refresh, per OpenAI's [token reference](https://developers.openai.com/siwc/token-sharing-open-source/token-reference).
 - **The ChatGPT plan route needs an open-source license before it is offered.** The flow is OpenAI's token sharing for open source, and the repo has no license yet. OpenAI's guide also says host-specific usage attribution and revocation for transferred sessions are not yet available.
 
 **Fallbacks:**
@@ -56,7 +56,7 @@ The Codex backend that Pi's `openai-codex` provider calls (`https://chatgpt.com/
 - If Pi sends a field the flow rejects, such as a system-role item: call the flow through the OpenAI SDK, with the gap recorded against Pi.
 - If the owner stays on the free plan: no deployed Pi route exists. Ditto stays local-only, and model turns run under Node from the owner's machine, the #25 baseline shape.
 - If ChatGPT plan access is unavailable to the owner: the OpenCode API key route carries the harness and the first delegated task. Hosted ChatGPT onboarding keeps its own gates.
-- If the included Workers AI model is retired (HTTP 410, as Kimi K2.6 was): move to the second choice, `@cf/zai-org/glm-5.3` (#35). If no Workers AI model calls tools reliably: Ditto offers no included model and relies on the OpenCode API key.
+- If the included Workers AI model is retired (HTTP 410, as Kimi K2.6 was): Ditto offers no included model. The owner dropped the second choice, `@cf/zai-org/glm-5.3` (#35), on 2026-11-26 (see [Candidate included model](#candidate-included-model)). If no Workers AI model calls tools reliably: Ditto offers no included model and relies on the OpenCode API key.
 
 **Owner evidence that confirms or overturns it:** #25 day 1 and day 2 (refresh of a day-old token) and the OpenCode baseline; #26 in local workerd on both routes, with real CPU figures; #30 day 1 and day 2 from Cloudflare; #31 on Workers Paid; #34 and #35 from a Durable Object. A refusal from Cloudflare's network on the supported endpoint, or a deployed CPU figure above what Workers Paid allows per request, would overturn the Durable Object route. Neither has been observed.
 
@@ -329,7 +329,7 @@ The supported plan-usage route: Sign in with ChatGPT tokens sent to `POST https:
 
 **Sign-in.** Authorization code with PKCE on the `127.0.0.1:1455/auth/callback` loopback, `client_id=dynamic_agent_client` on first registration, `agent_name_hint=Ditto`, a `urn:uuid` `ext_agent_host_id` created once per machine in `~/.config/ditto-feasibility/siwc-host-id`, and the scopes `openid profile email offline_access resource.invoke chatgpt.tokens.use.direct` with resource `https://api.openai.com/v1`. Pi refuses a grant without `chatgpt.tokens.use.direct`. Pi drops the ID token, so the command reads it off the token response and checks it against OpenAI's published keys (from `https://auth.openai.com/.well-known/openid-configuration`): signature, `iss`, `aud` (the issued client ID), `exp` and the attempt's `nonce` (`feasibility/id-token.ts`). The sign-in is saved only if every check passes. The local sign-in lives in `~/.config/ditto-feasibility/siwc.json`.
 
-**Request fields, from Pi's code.** For a Sign in with ChatGPT token on `api.openai.com`, Pi's Responses request sends `store: false` and `stream: true` and leaves out `temperature`, `max_output_tokens`, `prompt_cache_retention` and `prompt_cache_options`. Pi sends `previous_response_id` only on the Codex WebSocket transport, never to this endpoint. A system prompt becomes a `developer` item for a reasoning model and a `system` item otherwise, so a bot with a system prompt on a non-reasoning model would send the system-role item the flow rejects. The trial sends no system prompt. Each entry lists the fields Pi actually sent, against the rejected list (`temperature`, `max_output_tokens`, `previous_response_id`, `prompt`, system-role items), and any `subscription_sharing_*` or `chatpass_v2_*` error code. The system-role case stays a code reading until a trial sends a system prompt.
+**Request fields, from Pi's code.** For a Sign in with ChatGPT token on `api.openai.com`, Pi's Responses request sends `store: false` and `stream: true` and leaves out `temperature`, `max_output_tokens`, `prompt_cache_retention` and `prompt_cache_options`. Pi sends `previous_response_id` only on the Codex WebSocket transport, never to this endpoint. A system prompt becomes a `developer` item for a reasoning model and a `system` item otherwise, so a bot with a system prompt on a non-reasoning model would send the system-role item the flow rejects. The trial sends no system prompt. Each entry lists the fields Pi actually sent, against the rejected list (`temperature`, `max_output_tokens`, `previous_response_id`, `prompt`, system-role items), and any `subscription_sharing_*` or `chatpass_v2_*` error code. #64 settles the system-role case for the models Ditto offers: see [A bot's instructions (#64)](#a-bots-instructions-64).
 
 **Deployed, self-deployed shape.** OpenAI's [self-hosted guide](https://developers.openai.com/siwc/token-sharing-open-source/self-hosted-vms) in Cloudflare terms. The owner signs in on their own machine, because the loopback callback can only reach the browser's machine. `transfer-siwc` sends the credential once to the paid stage's `Bot` Durable Object, behind the run key, then deletes the local copy. From then on the Bot owns the sign-in: it keeps the credential in its storage, saves the rotated tokens after every step, refreshes it, and keeps its own `urn:uuid` host ID, created on the first transfer and never taken from the owner's machine. OpenAI sees a host ID only at authorize time and Pi's refresh sends none, so the transferred grant stays under the owner's machine's host ID, as the guide describes. The Bot's own ID is for its next authorization, which cannot run inside a Durable Object. OpenAI's guide notes that host-specific usage attribution and revocation for transferred sessions are not yet available. The Bot refuses a credential without the `chatgpt.tokens.use.direct` scope. Unlike the #31 Worker, the Bot holds the owner's credential at rest. That is a trial-only choice. Destroying the stage deletes the namespace and the credential with it. CPU time is the Bot's own invocation, which Cloudflare reports to the tail Worker as a separate event.
 
@@ -414,6 +414,14 @@ The first turn of run 1 refreshed before it sent, because the credential transfe
 
 None observed: the local entry (2026-11-23) and all three deployed runs (2026-11-24) returned no plan-usage error code. No consequence to record. A code seen later gets its own entry here.
 
+##### A bot's instructions (#64)
+
+**Settled: Pi sends a bot's instructions as a `developer` item on every model Ditto offers, so the route stays on Pi and needs no OpenAI SDK fallback.** Pi's Responses code (`openai-responses-shared.js`, `@earendil-works/pi-ai` 1.6.0) picks the role of a system prompt as `developer` when the model is a reasoning model and its compat doesn't set `supportsDeveloperRole: false`, and `system` otherwise. Ditto offers the ChatGPT plan only on `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4` and `gpt-5.4-mini` (`CHATGPT_MODELS`). All four are reasoning models in Pi's catalogue with no such compat, so none sends a `system` item. A model without reasoning, such as `gpt-4.1` or `gpt-5-chat-latest`, would send the system-role item the flow rejects. It must not be added to the list, and the `models` test project fails if it is.
+
+- **Client:** the pinned Pi runtime's `openai` provider in the Bot Durable Object, base URL `https://api.openai.com/v1` as catalogued. Pi leaves out the fields the flow rejects only for that exact base URL and a key that doesn't start with `sk-`. The Bot gets the access token alone as an `api_key` credential. Pi's OAuth credential would send the same bearer token (`toAuth` returns `{ apiKey: access }`), and the refresh token stays in the Credentials object.
+- **Checked against:** the test stage's Responses simulator (`apps/web/tests/auth/fake-upstream.ts`), which applies this flow's admission rules from `feasibility/simulated-provider.ts`: `store: false`, `stream: true`, and no `temperature`, `max_output_tokens`, `previous_response_id`, `prompt` or system-role item. A turn with the bot's instructions on `gpt-5.6-luna` sent input roles `developer`, `user`, carried none of the rejected fields, and completed (`apps/web/tests/models/chatgpt.test.ts`).
+- **Not yet observed live:** a `developer` item sent to the real endpoint. OpenAI's plan-usage docs reject system-role items and say nothing against `developer`. The first live turn with instructions confirms it, and a `subscription_sharing_unsupported_capability` error on `input` would reopen the OpenAI SDK fallback.
+
 ##### Can self-deployed Ditto use the ChatGPT plan without hosted-app approval?
 
 **Technically, yes.** On the owner's own account, the self-hosted shape (sign in on the owner's machine, transfer to the Bot, the Bot refreshes) ran turn, refresh and turn from Cloudflare's network on a later date, under `client_id=dynamic_agent_client`, with no approval step and no plan-usage error. Unlike the Codex backend (#30), `api.openai.com` did not refuse Cloudflare.
@@ -421,7 +429,7 @@ None observed: the local entry (2026-11-23) and all three deployed runs (2026-11
 Conditions before Ditto offers it:
 
 - Ditto carries no open-source license yet. The flow is OpenAI's token sharing for open source, so the route is not offered until the repo has one.
-- Pi sent no rejected field on a bare turn, but a real bot has a system prompt. Whether Pi sends it as a system-role item, which the flow rejects, is unexercised and listed as a remaining experiment.
+- Pi sent no rejected field on a bare turn. A bot's instructions go out as a `developer` item on every offered model, never as the system-role item the flow rejects (see [A bot's instructions (#64)](#a-bots-instructions-64)).
 - OpenAI's guide says host-specific usage attribution and revocation for transferred sessions are not yet available. The grant stays under the owner's machine's host ID.
 
 Hosted Ditto still needs OpenAI's approval of the hosted app. This result does not change that.
@@ -521,10 +529,12 @@ Every trial request was attributed: 9 of 9 for each model, read back through the
 
 **Candidate: `@cf/deepseek-ai/deepseek-v4.1-flash-1017`**, with `@cf/zai-org/glm-5.3` as the second choice. Both called the tool and used its result on every run. DeepSeek cost about a seventh of GLM-5.3 per run; GLM-5.3 used less CPU and answered the plain turn faster.
 
+**2026-11-26 · owner decision: no second choice.** The included model is DeepSeek V4.1 Flash alone. The owner dropped GLM-5.3 as the fallback. When Workers AI retires DeepSeek (HTTP 410), Ditto offers no included model, and a turn that chose it is refused until the owner connects a model. The GLM-5.3 runs above stay as evidence.
+
 **Unresolved limits:**
 
 - The tool test is one tool with no arguments over two requests. Multi-step tasks, tools with arguments and long replies are unmeasured.
-- Workers AI retires models on its own schedule: Kimi K2.6 was deprecated three days before this trial and Pi's catalogue still lists it. Ditto must pin the included model and handle a 410 (AiError 5028) by moving to the second choice.
+- Workers AI retires models on its own schedule: Kimi K2.6 was deprecated three days before this trial and Pi's catalogue still lists it. Ditto must pin the included model and handle a 410 (AiError 5028). Since 2026-11-26 it handles one by offering no included model.
 - The spend limit is not built. The gateway attributes every request, including refused ones, so the data a per-account limit needs exists.
 
 ##### Teardown
@@ -536,6 +546,49 @@ Every trial request was attributed: 9 of 9 for each model, read back through the
 - **Removed:** Workers `ditto-paid-pi-trial-model-trial` and `ditto-paid-pi-trial-cpu-tail`, the `Bot` Durable Object namespace with the sign-in it held, the AI Gateway with its logs, their KV namespace and run-key secret, and the local paid-stage sign-ins and run key
 
 The teardown also deleted the Sign in with ChatGPT credential transferred to the Bot for #34. #34's deployed run needs a fresh `pnpm feasibility:paid deploy` and `transfer-siwc` before `run --route siwc`.
+
+#### Deployed model access (#67)
+
+The checks local tests cannot make, run as built on the disposable stage `m67` (Workers Paid, `INCLUDED_MODEL=on`, `OPEN_SOURCE_LICENSE` recorded, `OPENAI_HOSTED_APPROVAL` empty) with the owner's own accounts and keys. Turns went through the signed-in home page, so each one crossed the workspace gateway, the Bot object and the account's Credentials object. CPU and wall times are each invocation's own, from `wrangler tail`. Ditto account IDs appear as `<account A>` and `<account B>`.
+
+###### 2026-11-26 · OpenCode API key turn through the Bot Durable Object (stage `m67`, self-deployed) · pass
+
+- **Route:** account A's OpenCode API key, model `deepseek-v4.1-flash`, chat completions. "Reply with pong." got "pong" at 18:23:36 UTC.
+- **CPU:** the Bot's `send` took 35ms of CPU and 1371ms of wall time. The Credentials grant took 0ms of CPU. A run on the stage's earlier deploy at 18:04:55 matched it (35ms CPU, 1387ms wall).
+- Tail logged the Bot's `send` outcome as `canceled`, though the reply streamed in full. That is probably the stream closing after the reply; it is unverified.
+
+###### 2026-11-26 · included model from two Ditto accounts, attributed in AI Gateway (stage `m67`) · pass
+
+- **Route:** `@cf/deepseek-ai/deepseek-v4.1-flash-1017` on Workers AI through the stage's AI Gateway (`v1/chat/completions`), billed to the operator's Cloudflare account. Each turn called `current_time` and answered with the time.
+- **Account A** at 18:18:14 and 18:18:16 UTC: gateway logs `01M8CH8QC7FKE73AHP35H2CT5G` and `01M8CH8S0QCDFQCC8SNCR5T3E0`, both HTTP 200, metadata `dittoAccount` = `<account A>`. The Bot's `send` took 40ms of CPU and 4082ms of wall time.
+- **Account B** at 18:23:11 UTC: gateway log `01M8CHHRX2XF8T7NFH40GNJC2X`, HTTP 200, `dittoAccount` = `<account B>`.
+
+###### 2026-11-27 · ChatGPT plan refresh 24 hours after import, in the Credentials Durable Object (stage `m67`) · pass, inferred
+
+- **Setup:** `pnpm chatgpt:import` imported the plan at 2026-11-26 18:31:20 UTC (client `dynamic_agent_client`, scope including `chatgpt.tokens.use.direct`). Nothing rotated the token after that: the later grants that day reused it, and no turn used the plan until this run.
+- **Run:** at 2026-11-27 18:33:09 UTC, 24h 1m 49s after the import, account A sent "Reply with pong." on `gpt-5.6-luna`.
+- **Refresh:** the Credentials grant took 3ms of CPU and 1041ms of wall time, against under 5ms of wall time for every grant that reused a token. That is the call to OpenAI's refresh-token grant. Settings stayed Connected, and a failed rotation would have shown Reconnect needed or a limit. The Bot then spent about 4.4s on OpenAI, which answered at the model rather than refusing the token. The stored expiry was not read: that check exists only on the test stage.
+- **Reply:** none. OpenAI answered "The ChatGPT user has reached their Subscription Sharing usage limit…", as on the first turns of 2026-11-26. The Bot's `send` took 30ms of CPU and 5442ms of wall time.
+- **Gaps found:** the page showed "The model stopped answering", and Settings kept the plan Connected. #18 and #65 expect Limit reached and a resumable turn. This plan-usage error is also the condition [Model route](#model-route) names for keeping the ChatGPT plan local-only, so the owner should review that consequence.
+- **Also seen on 2026-11-26:** `gpt-5.4-mini` was refused with `model_not_in_accessible_catalog` ("not supported when using Codex with a ChatGPT account").
+
+###### 2026-11-27 · Responses call on a hosted-mode stage, ChatGPT plan still gated (stage `m67`, hosted) · pass
+
+- **Deploy:** the stage was redeployed with `DEPLOYMENT_MODE=hosted` and `OPENAI_HOSTED_APPROVAL` still empty. The plan changed only that binding.
+- **Gate before the call:** Settings showed the ChatGPT plan as "Not offered on this deployment."
+- **Route:** account A's OpenCode API key, model `gpt-6-luna`, which Pi's catalogue serves on `openai-responses` at `https://opencode.ai/inference/openai/v1`. "Reply with pong." got "pong" at 19:09:52 UTC. The Bot's `send` took 38ms of CPU and 843ms of wall time; the Credentials grant took 0ms of CPU.
+- **Gate after the call:** still "Not offered on this deployment." A working call did not open hosted onboarding.
+
+###### 2026-11-27 · full suite before the last ticket of #18 merges · pass
+
+- `vp run verify`: check, then 53 test files with 418 tests, then the build. Every step passed in 1442s of tests.
+
+###### 2026-11-27 · stage `m67` torn down · pass
+
+- **Date:** 2026-11-27, 19:45 UTC
+- **Command:** `alchemy destroy --stage m67 --env-file .env.m67 --profile ditto --yes`, 5 of 5 resources deleted
+- **Removed:** Worker `ditto-app-m67` with its Bot, Credentials and Workspace Durable Objects, which held the owner's encrypted OpenCode key and ChatGPT sign-in; Container `ditto-workspace-m67-y4wnwliovn75ozqi`; the auth D1 database; the files R2 bucket; the AI Gateway with its logs. Afterwards the stage URL answered 404, and `wrangler` listed no m67 D1 database, R2 bucket or container.
+- **Left over:** the AI Gateway `ditto-gateway-m67-jz7y7duriadtyq6j`, orphaned by a failed redeploy on 2026-11-26. It holds request logs, not credentials, and is deleted in the dashboard. The ChatGPT session stays valid at OpenAI until it expires or the owner revokes it.
 
 ## Desktop provider
 
@@ -1614,32 +1667,32 @@ Candidate instance size, resource inventory and package versions. Screen capacit
 
 Every trial under #16 has run. The commands stay in each trial's section for repeats.
 
-| #   | Trial                                           | Result                                                                            | Decides                                                  |
-| --- | ----------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| #25 | Local baseline, ChatGPT plan and OpenCode       | passed on two local dates                                                         | provider behaviour from the home network                 |
-| #26 | Local workerd, both routes                      | passed                                                                            | Pi in workerd, CPU                                       |
-| #27 | Chrome behind the egress filter, local          | passed                                                                            | the filter's shape                                       |
-| #28 | WebSocket and HTTP/2 through the filter, local  | passed                                                                            | protocols through the filter                             |
-| #29 | Representative logins, local                    | Google and LinkedIn work with take-over; protected site skipped (no test account) | per-workflow grade behind the filter                     |
-| #30 | Free-tier probe from Cloudflare, two dates      | failed: OpenAI's edge refused the Codex backend; torn down                        | whether OpenAI accepts Cloudflare's network              |
-| #31 | Deployed Pi trial                               | OpenCode passed; Codex backend refused; torn down                                 | the Worker model route and its real CPU                  |
-| #32 | Cloudflare Containers trial                     | checks passed; Google and LinkedIn work with take-over                            | `NET_ADMIN`, identity, logins on Cloudflare              |
-| #34 | Sign in with ChatGPT, local then Durable Object | passed on 2026-11-23 and 2026-11-24                                               | ChatGPT plan for self-deployed Ditto                     |
-| #35 | Workers AI tool calling from a Durable Object   | DeepSeek V4.1 Flash and GLM-5.3 passed                                            | the included model (ADR-0011)                            |
-| #36 | Browser Run as the workspace browser            | rejected (ADR-0012); torn down                                                    | browser provider                                         |
-| #37 | Browser health on the shared computer           | every criterion has an entry; Google's restored login lasted hours, not a day     | logins across stops, size, idle, sandbox, DevTools, view |
+| #   | Trial                                           | Result                                                                                                                                                | Decides                                                  |
+| --- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| #25 | Local baseline, ChatGPT plan and OpenCode       | passed on two local dates                                                                                                                             | provider behaviour from the home network                 |
+| #26 | Local workerd, both routes                      | passed                                                                                                                                                | Pi in workerd, CPU                                       |
+| #27 | Chrome behind the egress filter, local          | passed                                                                                                                                                | the filter's shape                                       |
+| #28 | WebSocket and HTTP/2 through the filter, local  | passed                                                                                                                                                | protocols through the filter                             |
+| #29 | Representative logins, local                    | Google and LinkedIn work with take-over; protected site skipped (no test account)                                                                     | per-workflow grade behind the filter                     |
+| #30 | Free-tier probe from Cloudflare, two dates      | failed: OpenAI's edge refused the Codex backend; torn down                                                                                            | whether OpenAI accepts Cloudflare's network              |
+| #31 | Deployed Pi trial                               | OpenCode passed; Codex backend refused; torn down                                                                                                     | the Worker model route and its real CPU                  |
+| #32 | Cloudflare Containers trial                     | checks passed; Google and LinkedIn work with take-over                                                                                                | `NET_ADMIN`, identity, logins on Cloudflare              |
+| #34 | Sign in with ChatGPT, local then Durable Object | passed on 2026-11-23 and 2026-11-24                                                                                                                   | ChatGPT plan for self-deployed Ditto                     |
+| #35 | Workers AI tool calling from a Durable Object   | DeepSeek V4.1 Flash and GLM-5.3 passed                                                                                                                | the included model (ADR-0011)                            |
+| #36 | Browser Run as the workspace browser            | rejected (ADR-0012); torn down                                                                                                                        | browser provider                                         |
+| #37 | Browser health on the shared computer           | every criterion has an entry; Google's restored login lasted hours, not a day                                                                         | logins across stops, size, idle, sandbox, DevTools, view |
+| #67 | Model access on a deployed stage                | OpenCode, included model and hosted Responses passed; ChatGPT refresh after 24h passed by inference, but the turn hit the plan-usage limit; torn down | model access as built                                    |
 
 No trial is blocked by the free tier: the owner moved to Workers Paid, and #31, #32, #34, #35 and #37 ran on it.
 
 **Still to run, none of which blocks the choices above:**
 
-- **A bot's system prompt on Sign in with ChatGPT.** Whether Pi sends it as a system-role item, which the flow rejects. Decides whether the ChatGPT plan route needs the OpenAI SDK fallback.
+- **A bot's instructions on Sign in with ChatGPT, live.** Settled against the simulator by #64: Pi sends them as a `developer` item on every offered model, so no OpenAI SDK fallback. The first live turn with instructions confirms the endpoint accepts it.
 - **A Google login's lifetime without a running browser.** Restore at intervals between 1 and 12 hours, and try a periodic keep-alive instance. Decides how often a Google bot needs a take-over.
 - **A CAPTCHA-heavy sign-in on `standard-1`,** with memory sampling. Confirms the minimum size.
 - **The protected-site workflow** (a Turnstile-protected site, such as the Cloudflare dashboard) on Cloudflare, with a test account.
 - **Screen capacity under real work,** before any capacity commitment.
 - **Turn CPU with real-length replies** in the Bot Durable Object.
-- **A refresh after a full day or more** in the Bot. The longest observed so far is about 12.5 hours.
 - **First-start image pull time** on Cloudflare.
 - **The `enableInternet: false` intercept filter,** built and run through the allow, deny, WebSocket and HTTP/2 checks. Only needed if Cloudflare withdraws `NET_ADMIN`.
 - **Debian packages pinned by snapshot,** and the suites rerun.
@@ -1656,6 +1709,8 @@ Approval to onboard hosted users onto their ChatGPT plan is tracked here, apart 
 
 **Consequence while pending:** hosted users cannot be onboarded onto their ChatGPT plan, whatever the trials show. Technical readiness (the model route above) and approval are separate gates, and both must pass. Developer and owner testing on their own accounts, and the OpenCode API key route, continue meanwhile (ADR-0003). Ditto is local-only today, so nothing ships while this is pending.
 
+**Where the deployment records it (#66):** a hosted stage sets `DEPLOYMENT_MODE=hosted` and records the approval in `OPENAI_HOSTED_APPROVAL` (see `.env.example`). Until both gates are recorded, Settings says the plan is not offered and the import is refused.
+
 ### Open-source license
 
 The Sign in with ChatGPT route is OpenAI's token sharing for open source. Ditto has no license file yet. Until it does, the route is not offered to self-deployed owners either.
@@ -1663,3 +1718,5 @@ The Sign in with ChatGPT route is OpenAI's token sharing for open source. Ditto 
 **Status:** _Not started_
 
 **Consequence while pending:** owners can test the route on their own accounts. Ditto does not offer it.
+
+**Where the deployment records it (#66):** `OPEN_SOURCE_LICENSE`, the license's SPDX identifier (see `.env.example`). Empty, the default, means not recorded, so no stage offers the plan until it is set.

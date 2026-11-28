@@ -5,6 +5,8 @@ import * as Alchemy from "alchemy";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 
+import type { BotRpc } from "./apps/web/src/bot-rpc.ts";
+import type { CredentialsRpc } from "./apps/web/src/credentials-rpc.ts";
 import type { WorkspaceRpc } from "./apps/web/src/workspace-rpc.ts";
 
 const AuthDatabase = Cloudflare.D1.Database("auth-db", {
@@ -29,6 +31,35 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 			stage === "test"
 				? 2
 				: yield* Effect.orDie(Config.Int("COMPUTER_MAX_INSTANCES").pipe(Config.withDefault(2)));
+		// The included model (ADR-0011), off unless the operator turns it on. It is Workers AI,
+		// billed to the operator, through an AI Gateway that logs each request's account. The test
+		// stage binds a stand-in that passes each request to the fake Workers AI instead.
+		const includedModel = yield* Effect.orDie(
+			Config.String("INCLUDED_MODEL").pipe(Config.withDefault("off")),
+		);
+		const workersAi: Cloudflare.WorkerBindingProps =
+			stage === "test"
+				? {
+						AI: Cloudflare.Worker("workers-ai-stand-in", {
+							name: `ditto-app-${stage}-workers-ai`,
+							main: path.join(import.meta.dirname, "apps/web/tests/models/workers-ai-stand-in.ts"),
+							// Off the dev port it would take otherwise. Reached only through the binding.
+							dev: {
+								port: yield* Effect.orDie(
+									Config.Int("TEST_AI_PORT").pipe(Config.withDefault(1352)),
+								),
+							},
+							env: { UPSTREAM: Config.String("OAUTH_UPSTREAM") },
+						}),
+						AI_GATEWAY_ID: "test-gateway",
+					}
+				: includedModel === "on"
+					? {
+							AI: Cloudflare.Workers.AI(),
+							AI_GATEWAY_ID: (yield* Cloudflare.AI.Gateway("gateway", { collectLogs: true }))
+								.gatewayId,
+						}
+					: {};
 		return {
 			name: `ditto-app-${stage}`,
 			rootDir: path.join(import.meta.dirname, "apps/web"),
@@ -53,8 +84,32 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 				),
 				// Encrypts the shared computer's stored browser cookies (#20). Losing it loses them.
 				COOKIE_ENCRYPTION_KEY: Config.Redacted("COOKIE_ENCRYPTION_KEY"),
-				BOT: Cloudflare.DurableObject<unknown>("bot", { className: "Bot" }),
-				CREDENTIALS: Cloudflare.DurableObject<unknown>("credentials", {
+				// Encrypts each account's stored model connections (#18). Losing it loses them.
+				CREDENTIALS_ENCRYPTION_KEY: Config.Redacted("CREDENTIALS_ENCRYPTION_KEY"),
+				...workersAi,
+				INCLUDED_MODEL: includedModel,
+				// Whether owners are offered the ChatGPT plan (#66): gates the operator records, never
+				// inferred from a working call. The test stage records the license; its tests vary all
+				// three per account.
+				...(stage === "test"
+					? {
+							DEPLOYMENT_MODE: "self-deployed",
+							OPEN_SOURCE_LICENSE: "test-license",
+							OPENAI_HOSTED_APPROVAL: "",
+						}
+					: {
+							DEPLOYMENT_MODE: Config.Literals(["self-deployed", "hosted"], "DEPLOYMENT_MODE").pipe(
+								Config.withDefault("self-deployed"),
+							),
+							OPEN_SOURCE_LICENSE: Config.String("OPEN_SOURCE_LICENSE").pipe(
+								Config.withDefault(""),
+							),
+							OPENAI_HOSTED_APPROVAL: Config.String("OPENAI_HOSTED_APPROVAL").pipe(
+								Config.withDefault(""),
+							),
+						}),
+				BOT: Cloudflare.DurableObject<BotRpc>("bot", { className: "Bot" }),
+				CREDENTIALS: Cloudflare.DurableObject<CredentialsRpc>("credentials", {
 					className: "Credentials",
 				}),
 				BETTER_AUTH_URL: origin.origin,
@@ -76,6 +131,8 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 							CODE_RESEND_IN: Config.String("CODE_RESEND_IN"),
 							// Shortens the five idle minutes before the shared computer stops.
 							COMPUTER_IDLE_SECONDS: Config.String("COMPUTER_IDLE_SECONDS"),
+							// Where OpenCode's OpenAI API is reached instead of opencode.ai.
+							OPENCODE_BASE_URL: Config.String("OPENCODE_BASE_URL"),
 							// Opens the gateway's test hooks and the interrupted-open, failed-open and failed bot-list faults.
 							TEST_HOOKS: "on",
 						}

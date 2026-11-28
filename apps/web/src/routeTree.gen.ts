@@ -16,6 +16,7 @@ import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as AccountIndexRouteImport } from './routes/_account/index'
 import { Route as AccountSettingsRouteImport } from './routes/_account/settings'
 import { Route as DesignAuthRouteImport } from './routes/design_.auth'
+import { Route as DesignModelsRouteImport } from './routes/design_.models'
 import { Route as DesignSiteRequestRouteImport } from './routes/design_.site-request'
 import { Route as DesignWorkspaceRouteImport } from './routes/design_.workspace'
 import { Route as AccountSettingsVerifyEmailRouteImport } from './routes/_account/settings_.verify-email'
@@ -55,6 +56,11 @@ const DesignAuthRoute = DesignAuthRouteImport.update({
   path: '/design/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DesignModelsRoute = DesignModelsRouteImport.update({
+  id: '/design_/models',
+  path: '/design/models',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DesignSiteRequestRoute = DesignSiteRequestRouteImport.update({
   id: '/design_/site-request',
   path: '/design/site-request',
@@ -84,6 +90,7 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/settings': typeof AccountSettingsRoute
   '/design/auth': typeof DesignAuthRoute
+  '/design/models': typeof DesignModelsRoute
   '/design/site-request': typeof DesignSiteRequestRoute
   '/design/workspace': typeof DesignWorkspaceRoute
   '/settings/verify-email': typeof AccountSettingsVerifyEmailRoute
@@ -95,6 +102,7 @@ export interface FileRoutesByTo {
   '/sign-up': typeof SignUpRoute
   '/settings': typeof AccountSettingsRoute
   '/design/auth': typeof DesignAuthRoute
+  '/design/models': typeof DesignModelsRoute
   '/design/site-request': typeof DesignSiteRequestRoute
   '/design/workspace': typeof DesignWorkspaceRoute
   '/': typeof AccountIndexRoute
@@ -109,6 +117,7 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/_account/settings': typeof AccountSettingsRoute
   '/design_/auth': typeof DesignAuthRoute
+  '/design_/models': typeof DesignModelsRoute
   '/design_/site-request': typeof DesignSiteRequestRoute
   '/design_/workspace': typeof DesignWorkspaceRoute
   '/_account/': typeof AccountIndexRoute
@@ -124,6 +133,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/settings'
     | '/design/auth'
+    | '/design/models'
     | '/design/site-request'
     | '/design/workspace'
     | '/settings/verify-email'
@@ -135,6 +145,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/settings'
     | '/design/auth'
+    | '/design/models'
     | '/design/site-request'
     | '/design/workspace'
     | '/'
@@ -148,6 +159,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/_account/settings'
     | '/design_/auth'
+    | '/design_/models'
     | '/design_/site-request'
     | '/design_/workspace'
     | '/_account/'
@@ -161,6 +173,7 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
   DesignAuthRoute: typeof DesignAuthRoute
+  DesignModelsRoute: typeof DesignModelsRoute
   DesignSiteRequestRoute: typeof DesignSiteRequestRoute
   DesignWorkspaceRoute: typeof DesignWorkspaceRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -217,6 +230,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DesignAuthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/design_/models': {
+      id: '/design_/models'
+      path: '/design/models'
+      fullPath: '/design/models'
+      preLoaderRoute: typeof DesignModelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/design_/site-request': {
       id: '/design_/site-request'
       path: '/design/site-request'
@@ -269,6 +289,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
   DesignAuthRoute: DesignAuthRoute,
+  DesignModelsRoute: DesignModelsRoute,
   DesignSiteRequestRoute: DesignSiteRequestRoute,
   DesignWorkspaceRoute: DesignWorkspaceRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

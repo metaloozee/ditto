@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import {
@@ -10,9 +10,20 @@ import {
 	type Method,
 } from "#/components/account.tsx";
 import { oneOf, PROVIDERS, type Provider } from "#/components/auth.tsx";
+import { ModelAccessSection } from "#/components/model-access.tsx";
 import { toast } from "#/components/ui/toast.tsx";
 import { authClient, useSignOut } from "#/lib/auth-client.ts";
 import { resendAtFrom, sendLinkEmailCode } from "#/lib/email-code-client.ts";
+import {
+	accessOf,
+	checkConnection,
+	chooseDefaultPair,
+	connectOpenCodeKey,
+	disconnectModel,
+	getChatGPTOffered,
+	getModelAccess,
+} from "#/lib/model-access-api.ts";
+import { OPENCODE_MODELS } from "#/lib/model-access.ts";
 
 type SettingsSearch = { outcome?: LinkOutcome; method?: Method };
 
@@ -22,8 +33,21 @@ export const Route = createFileRoute("/_account/settings")({
 		outcome: search.error ? oauthLinkOutcome(search.error) : oneOf(LINK_OUTCOMES, search.outcome),
 		method: oneOf(METHOD_KEYS, search.method),
 	}),
+	loader: async () => {
+		const [access, chatgptOffered] = await Promise.all([getModelAccess(), getChatGPTOffered()]);
+		return { access, chatgptOffered };
+	},
 	component: Settings,
 });
+
+function showChatGPTImport() {
+	toast({
+		id: "chatgpt-import",
+		state: "info",
+		message: "Import your ChatGPT sign-in",
+		description: `On your computer, set DITTO_COOKIE to your signed-in session cookie and run pnpm chatgpt:import ${window.location.origin} from the Ditto repository.`,
+	});
+}
 
 function oauthLinkOutcome(error: unknown): LinkOutcome {
 	switch (error) {
@@ -43,7 +67,9 @@ function oauthLinkOutcome(error: unknown): LinkOutcome {
 function Settings() {
 	const { account } = Route.useRouteContext();
 	const { outcome, method } = Route.useSearch();
+	const { access: modelAccess, chatgptOffered } = Route.useLoaderData();
 	const navigate = useNavigate();
+	const router = useRouter();
 	const signOut = useSignOut();
 
 	// A linking outcome shows once as a toast, then leaves the URL.
@@ -100,6 +126,49 @@ function Settings() {
 			account={account}
 			onLink={(next) => void (next === "email" ? linkEmail() : linkProvider(next))}
 			onSignOut={() => void signOut()}
+			modelAccess={
+				<ModelAccessSection
+					access={accessOf(modelAccess)}
+					chatgptOffered={chatgptOffered}
+					opencodeModels={OPENCODE_MODELS}
+					defaultPair={modelAccess.defaultPair ?? undefined}
+					onDefaultPairChange={async (pair) => {
+						const refused = await chooseDefaultPair(pair);
+						if (refused) {
+							toast({
+								id: "notice-default-model",
+								state: "error",
+								message: "The default model didn’t change",
+								description: refused,
+							});
+						}
+						await router.invalidate();
+					}}
+					onConnectKey={async (key, model) => {
+						const refused = await connectOpenCodeKey(key, model);
+						if (!refused) await router.invalidate();
+						return refused;
+					}}
+					onDisconnect={async (connectionId) => {
+						const refused = await disconnectModel(connectionId);
+						if (refused) {
+							toast({
+								id: "notice-disconnect",
+								state: "error",
+								message: "The connection is still there",
+								description: refused,
+							});
+						}
+						await router.invalidate();
+					}}
+					onCheck={async (connectionId) => {
+						await checkConnection(connectionId);
+						await router.invalidate();
+					}}
+					onConnectChatGPT={showChatGPTImport}
+					onReconnect={showChatGPTImport}
+				/>
+			}
 		/>
 	);
 }

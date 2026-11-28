@@ -1,13 +1,13 @@
 import {
 	Add01Icon,
 	Alert02Icon,
-	ArrowUp02Icon,
 	ComputerIcon,
 	ComputerTerminal01Icon,
 	Folder01Icon,
 	GitCompareIcon,
 	Logout01Icon,
 	Settings01Icon,
+	Settings02Icon,
 	PinIcon,
 	SidebarLeftIcon,
 	UnfoldMoreIcon,
@@ -19,6 +19,11 @@ import * as React from "react";
 
 import type { Account } from "#/components/account.tsx";
 import { DittoMark, DittoStage } from "#/components/ditto-mark.tsx";
+import {
+	COMPOSER_PLACEHOLDERS,
+	type ComposerMode,
+	SendOrStop,
+} from "#/components/model-access.tsx";
 import { Avatar, AvatarFallback } from "#/components/ui/avatar.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
@@ -80,15 +85,14 @@ const SIDEBAR_STYLE = {
 const FACE_ROW =
 	"h-14 gap-3 rounded-xl px-2 data-active:bg-background data-active:shadow-sm data-active:hover:bg-background group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:p-0!";
 
-/** Ditto's first words, the same on every visit until conversation arrives (#19). */
+/** Ditto's first words, the same on every visit until conversation history arrives (#19). */
 const GREETINGS = [
 	"Hi, I’m Ditto, your Chief of Staff.",
 	"Ask me for something, and I’ll hand it to the right bot and check the work before it comes back to you.",
 	"We share one computer. It starts when there’s work to do.",
-	"Chat is on its way. Until then, take a look around.",
 ];
 /** Uneven, tightening gaps read as one arrival rather than a metronome. */
-const GREETING_DELAYS_MS = [0, 70, 130, 180];
+const GREETING_DELAYS_MS = [0, 70, 130];
 
 /** The docked panel needs room beside the conversation; narrower screens get a drawer. */
 function useDocked() {
@@ -124,15 +128,28 @@ export function WorkspaceView({
 	onPanelOpenChange,
 	onSignOut,
 	messages,
+	composer = "soon",
+	onSend,
+	onStop,
+	onOpenBotSettings,
+	botSettings,
 }: {
 	account: Account;
 	workspace: Workspace;
 	sidebarPinned: boolean;
 	panelOpen: boolean;
 	onPanelOpenChange: (open: boolean) => void;
-	/** Replaces the fixed greetings; only `/design` passes it until conversation lands (#19). */
+	/** Replaces the fixed greetings once the owner has sent something. */
 	messages?: React.ReactNode;
 	onSignOut: () => void;
+	composer?: ComposerMode;
+	/** Called with the trimmed message when the owner sends one in `ready` mode. */
+	onSend?: (message: string) => void;
+	/** Called when the owner presses Stop in `running` mode. */
+	onStop?: () => void;
+	/** Shows the gear in the bot panel; the caller renders `botSettings` and opens it. */
+	onOpenBotSettings?: () => void;
+	botSettings?: React.ReactNode;
 }) {
 	const docked = useDocked();
 	const name = workspace.chiefOfStaff.name;
@@ -142,9 +159,14 @@ export function WorkspaceView({
 			panelOpen={panelOpen}
 			onPanelOpenChange={onPanelOpenChange}
 			messages={messages}
+			composer={composer}
+			onSend={onSend}
+			onStop={onStop}
 		/>
 	);
-	const panel = <ComputerPanel computer={workspace.computer} />;
+	const panel = (
+		<ComputerPanel name={name} computer={workspace.computer} onOpenSettings={onOpenBotSettings} />
+	);
 	return (
 		<SidebarProvider defaultOpen={sidebarPinned} style={SIDEBAR_STYLE}>
 			<WorkspaceSidebar account={account} name={name} onSignOut={onSignOut} />
@@ -178,6 +200,7 @@ export function WorkspaceView({
 					</DrawerContent>
 				</Drawer>
 			)}
+			{botSettings}
 		</SidebarProvider>
 	);
 }
@@ -357,11 +380,17 @@ function ConversationPane({
 	panelOpen,
 	onPanelOpenChange,
 	messages,
+	composer,
+	onSend,
+	onStop,
 }: {
 	name: string;
 	panelOpen: boolean;
 	onPanelOpenChange: (open: boolean) => void;
 	messages?: React.ReactNode;
+	composer: ComposerMode;
+	onSend?: (message: string) => void;
+	onStop?: () => void;
 }) {
 	return (
 		<section
@@ -408,16 +437,35 @@ function ConversationPane({
 				</Tooltip>
 				<p className="bot-name-in mt-2 text-caption text-muted-foreground">Chief of Staff</p>
 			</header>
-			<Composer name={name} />
+			<Composer name={name} mode={composer} onSend={onSend} onStop={onStop} />
 		</section>
 	);
 }
 
-function Composer({ name }: { name: string }) {
+function Composer({
+	name,
+	mode,
+	onSend,
+	onStop,
+}: {
+	name: string;
+	mode: ComposerMode;
+	onSend?: (message: string) => void;
+	onStop?: () => void;
+}) {
+	const off = mode === "soon" || mode === "no-model";
 	return (
 		<form
 			className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pt-10 pb-4"
-			onSubmit={(event) => event.preventDefault()}
+			onSubmit={(event) => {
+				event.preventDefault();
+				const field = event.currentTarget.elements.namedItem("message");
+				if (mode !== "ready" || !(field instanceof HTMLTextAreaElement)) return;
+				const message = field.value.trim();
+				if (!message) return;
+				onSend?.(message);
+				field.value = "";
+			}}
 		>
 			<ProgressiveBlur side="bottom" className="h-full" />
 			<div className="pointer-events-auto relative mx-auto flex w-full max-w-2xl items-end gap-1 rounded-3xl bg-popover p-1.5 shadow-lg ring-1 ring-foreground/10 transition-shadow focus-within:ring-ring/60">
@@ -427,20 +475,25 @@ function Composer({ name }: { name: string }) {
 					size="icon"
 					className="rounded-full"
 					aria-label="Attach"
-					disabled
+					disabled={off}
 				>
 					<HugeiconsIcon icon={Add01Icon} />
 				</Button>
 				<textarea
+					name="message"
 					aria-label={`Message ${name}`}
-					placeholder="Chat is on its way"
+					placeholder={COMPOSER_PLACEHOLDERS[mode](name)}
 					rows={1}
-					disabled
+					disabled={off}
+					onKeyDown={(event) => {
+						// Enter sends; Shift+Enter, or Enter while composing with an IME, breaks the line.
+						if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+						event.preventDefault();
+						event.currentTarget.form?.requestSubmit();
+					}}
 					className="field-sizing-content max-h-40 min-h-8 flex-1 resize-none bg-transparent px-1 py-1.5 text-base outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed md:text-sm"
 				/>
-				<Button type="submit" size="icon" className="rounded-full" aria-label="Send" disabled>
-					<HugeiconsIcon icon={ArrowUp02Icon} />
-				</Button>
+				<SendOrStop mode={mode} onStop={onStop} />
 			</div>
 		</form>
 	);
@@ -452,12 +505,23 @@ const CONTROLS = [
 	{ label: "Changes", icon: GitCompareIcon },
 ];
 
-function ComputerPanel({ computer }: { computer: Workspace["computer"] }) {
+/**
+ * The bot panel: the computer's state and the bot's settings on the top row, then the screen
+ * and its controls. The conversation already names the bot, and the screen says what it is.
+ */
+function ComputerPanel({
+	name,
+	computer,
+	onOpenSettings,
+}: {
+	name: string;
+	computer: Workspace["computer"];
+	onOpenSettings?: () => void;
+}) {
 	const running = computer === "running";
 	return (
 		<div className="flex flex-col gap-4">
-			<div className="flex items-center justify-between gap-3">
-				<h2>Computer</h2>
+			<div className="flex min-h-8 items-center justify-between gap-3">
 				<Badge variant="secondary">
 					<span aria-hidden className="relative flex size-2">
 						{running ? (
@@ -469,6 +533,24 @@ function ComputerPanel({ computer }: { computer: Workspace["computer"] }) {
 					</span>
 					{running ? "Running" : "Stopped"}
 				</Badge>
+				{onOpenSettings && (
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Button
+									variant="ghost"
+									size="icon"
+									aria-label={`${name}’s settings`}
+									onClick={onOpenSettings}
+									className="-me-1.5 text-muted-foreground hover:text-foreground"
+								/>
+							}
+						>
+							<HugeiconsIcon icon={Settings02Icon} />
+						</TooltipTrigger>
+						<TooltipContent side="bottom">Settings</TooltipContent>
+					</Tooltip>
+				)}
 			</div>
 			{/* The screen sits in a bezel, like the mark: a lit frame around a dark, sunken display. */}
 			<div className="rounded-2xl bg-linear-to-b from-muted to-card p-1.5 ring-1 ring-foreground/10">

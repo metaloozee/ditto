@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/d1";
 import { personalWorkspace, workspaceBot } from "../db/workspace-schema.ts";
 import type { Member } from "../workspace-rpc.ts";
 import { auth } from "./auth.server.ts";
+import { botRoute } from "./bot-gateway.server.ts";
 import { noSuchFile, serveFile } from "./workspace-files.server.ts";
 import { requestedFileKey } from "./workspace-files.ts";
 
@@ -99,6 +100,10 @@ async function testHook(request: Request, admitted: Admitted, hook: string): Pro
 	if (hook === "members" && method === "GET") {
 		return Response.json(await admitted.workspace.members());
 	}
+	if (hook === "members" && method === "POST") {
+		await admitted.workspace.addSpecialist((await request.json()) as Member);
+		return new Response(null, { status: 204 });
+	}
 	if (hook === "bot-list" && (method === "POST" || method === "DELETE")) {
 		// Writes the D1 bot list behind the object's back, as a failed or stray write would.
 		const db = drizzle(env.DB);
@@ -146,7 +151,7 @@ async function openRoute(request: Request): Promise<Response> {
 }
 
 /** Carries the session refresh's cookies on an answer, except a WebSocket upgrade. */
-function withCookies(answer: Response, refreshed: Headers): Response {
+export function withCookies(answer: Response, refreshed: Headers): Response {
 	const cookies = refreshed.getSetCookie();
 	if (answer.status === 101 || cookies.length === 0) return answer;
 	const kept = new Response(answer.body, answer);
@@ -216,6 +221,8 @@ async function route(request: Request, admitted: Admitted, rest: string): Promis
 		return serveFile(admitted.workspaceId, rest.slice(FILES.length));
 	}
 	if (rest === "/bindings" && method === "GET") return Response.json(await bindings(admitted));
+	const toBot = await botRoute(request, admitted, rest);
+	if (toBot) return toBot;
 	const url = new URL(request.url);
 	const forwarded = new Request(new URL(rest + url.search, url.origin), request);
 	// Replaces anything the client sent, so only the server-resolved ID reaches the object.

@@ -1,0 +1,539 @@
+import {
+	type AssistantMessage,
+	type Context,
+	createModels,
+	InMemoryCredentialStore,
+	type Tool,
+	type ToolResultMessage,
+} from "@earendil-works/pi-ai";
+import { CLOUDFLARE_GATEWAY_BINDING_AUTH_SENTINEL } from "@earendil-works/pi-ai/api/cloudflare-ai-binding";
+import { cloudflareWorkersAIProvider } from "@earendil-works/pi-ai/providers/cloudflare-workers-ai";
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
+import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
+import { DurableObject } from "cloudflare:workers";
+
+import type {
+	BotRpc,
+	Pending,
+	Queued,
+	ResumeAnswer,
+	Turn,
+	TurnEvent,
+	TurnRefusal,
+	TurnStatus,
+} from "./bot-rpc.ts";
+import type { CredentialsRpc, Fault, Grant } from "./credentials-rpc.ts";
+import type { Credentials } from "./credentials.ts";
+import type { AuthEnv } from "./lib/auth.ts";
+import { INCLUDED, type Pair } from "./lib/model-access.ts";
+import { openaiFetch } from "./lib/openai-upstream.ts";
+import { faultOf } from "./lib/provider-fault.ts";
+import { testStageOnly } from "./lib/test-stage.ts";
+
+type Granted = Exclude<Grant, { refused: unknown }>;
+type Ended = Exclude<TurnStatus, "running">;
+
+const encoder = new TextEncoder();
+
+/**
+ * The tools a bot's model may call, as the model sees them. Offered on the included model
+ * only so far: on the ChatGPT plan, Pi sends their declarations as a second `developer` item,
+ * which no recorded run of the plan-usage flow has carried.
+ */
+const TOOLS: Tool[] = [
+	{
+		name: "current_time",
+		description: "Returns the current date and time in UTC, as ISO 8601. Takes no arguments.",
+		parameters: { type: "object", properties: {}, additionalProperties: false },
+	},
+];
+
+/** What each tool does, run by the Bot itself. */
+const RUN: Record<string, () => string> = {
+	current_time: () => new Date().toISOString(),
+};
+
+/** The most model replies one turn may take, so a model that keeps calling tools still ends. */
+const TOOL_ROUNDS = 8;
+
+/** The result of one tool call in a reply, for the model's next round. */
+function toolResult(block: AssistantMessage["content"][number]): ToolResultMessage[] {
+	if (block.type !== "toolCall") return [];
+	const run = RUN[block.name];
+	return [
+		{
+			role: "toolResult",
+			toolCallId: block.id,
+			toolName: block.name,
+			content: [{ type: "text", text: run ? run() : `No tool is named ${block.name}` }],
+			isError: !run,
+			timestamp: Date.now(),
+		},
+	];
+}
+/** The bot's instructions, sent with every turn until bots carry their own. */
+const INSTRUCTIONS = "You are Ditto, the owner's Chief of Staff. Reply plainly and briefly.";
+
+/** The most turns one `pending` call reads, within storage's limit on one `get`. */
+const PENDING_LIMIT = 100;
+
+/**
+ * One per bot, running its turns through the pinned Pi runtime. Holds no credential: each turn
+ * asks the account's Credentials object for the one its call needs, and drops it afterwards.
+ *
+ * A turn its connection interrupts stays stored as `unfinished`, with its pair and the reply so
+ * far, and messages sent meanwhile wait in `queue`. Once Credentials sees the connection answer
+ * again, `recover` resumes that turn on its own pair and then runs the queue in order. Only the
+ * owner's Resume (`resumeOn`) moves it to another pair first.
+ */
+export class Bot extends DurableObject<AuthEnv> implements BotRpc {
+	#running: { id: string; controller: AbortController } | null = null;
+	/** Set while the bot resumes its unfinished turn and runs its queue. */
+	#draining = false;
+	/** A recovery that arrived while a live turn ran, started once it ends. */
+	#recoverAfter: string | null = null;
+	/** The turn an owner's Resume is moving to a new pair, while it runs there. */
+	#resuming: string | null = null;
+
+	override fetch(): Response {
+		return Response.json({ object: "Bot" });
+	}
+
+	async send(
+		accountId: string,
+		message: string,
+	): Promise<
+		{ stream: ReadableStream<Uint8Array> } | { queued: string } | { refused: TurnRefusal }
+	> {
+		// Storage reads hold other calls back, so a second send can't slip in before the claim.
+		const waiting = this.#draining || (await this.#waiting());
+		if (!waiting && this.#running) return { refused: "busy" };
+		// Claimed before the first call out, so a second send can't start beside this one.
+		const running = waiting ? null : { id: crypto.randomUUID(), controller: new AbortController() };
+		if (running) this.#running = running;
+		// The pair is resolved once, here: a change to it from now on reaches only the next turn.
+		const override = (await this.ctx.storage.get<Pair>("override")) ?? null;
+		const grant = await this.#grant(accountId, override);
+		if (!running || "refused" in grant) {
+			if (running) this.#running = null;
+			// No model could ever run it, so it is refused even behind waiting work.
+			if ("refused" in grant && grant.refused === "no-model") return { refused: "no-model" };
+			return this.#enqueue(accountId, message);
+		}
+		const turn: Turn = {
+			id: running.id,
+			pair: grant.pair,
+			message,
+			reply: "",
+			status: "running",
+			startedAt: new Date().toISOString(),
+		};
+		await this.ctx.storage.put(`turn:${turn.id}`, turn);
+
+		const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+		const writer = writable.getWriter();
+		// Never awaited: a reader that went away must not hold up the turn or its record.
+		const emit = (event: TurnEvent) => {
+			writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)).catch(() => {});
+		};
+		emit({ type: "start", turnId: turn.id, pair: turn.pair });
+		void this.#run(accountId, turn, grant, running.controller.signal, emit).finally(() => {
+			if (this.#running === running) this.#running = null;
+			writer.close().catch(() => {});
+			const recovering = this.#recoverAfter;
+			this.#recoverAfter = null;
+			if (recovering) void this.recover(recovering);
+		});
+		return { stream: readable };
+	}
+
+	async recover(accountId: string): Promise<void> {
+		if (this.#draining || this.#running) {
+			this.#recoverAfter = accountId;
+			return;
+		}
+		this.#draining = true;
+		try {
+			do {
+				this.#recoverAfter = null;
+				await this.#drain(accountId);
+			} while (this.#recoverAfter);
+		} finally {
+			this.#draining = false;
+		}
+	}
+
+	async resumeOn(accountId: string, turnId: string, pair: Pair): Promise<ResumeAnswer> {
+		const [unfinished, turn] = await Promise.all([
+			this.ctx.storage.get<string>("unfinished"),
+			this.ctx.storage.get<Turn>(`turn:${turnId}`),
+		]);
+		if (!turn) return "unknown";
+		// A repeat, or a turn its own connection already carried on: nothing starts again.
+		if (this.#resuming === turnId || turn.status !== "interrupted") return "resumed";
+		if (unfinished !== turnId || this.#draining || this.#running) return "refused";
+		// Claimed before the first call out, so a second Resume can't start it beside this one.
+		this.#draining = true;
+		this.#resuming = turnId;
+		const release = () => {
+			this.#draining = false;
+			this.#resuming = null;
+			if (this.#recoverAfter) this.ctx.waitUntil(this.recover(accountId));
+		};
+		try {
+			const grant = await this.#grant(accountId, pair);
+			if ("refused" in grant) {
+				release();
+				return "refused";
+			}
+			// The drain resumes the unfinished turn on whatever pair its record names.
+			await this.ctx.storage.put(`turn:${turnId}`, { ...turn, pair: grant.pair });
+		} catch (error) {
+			release();
+			throw error;
+		}
+		this.ctx.waitUntil(this.#drain(accountId).finally(release));
+		return "resumed";
+	}
+
+	async pending(ids: string[]): Promise<Pending> {
+		const names = ids.slice(0, PENDING_LIMIT).map((id) => `turn:${id}`);
+		const unfinished = (await this.ctx.storage.get<string>("unfinished")) ?? null;
+		if (unfinished && !names.includes(`turn:${unfinished}`)) names.push(`turn:${unfinished}`);
+		const turns = await this.ctx.storage.get<Turn>(names);
+		return {
+			turns: [...turns.values()],
+			unfinished,
+			queue: (await this.ctx.storage.get<Queued[]>("queue")) ?? [],
+		};
+	}
+
+	stop(): boolean {
+		if (!this.#running) return false;
+		this.#running.controller.abort();
+		return true;
+	}
+
+	async override(): Promise<Pair | null> {
+		return (await this.ctx.storage.get<Pair>("override")) ?? null;
+	}
+
+	async chooseOverride(accountId: string, pair: Pair | null): Promise<boolean> {
+		if (pair === null) {
+			await this.ctx.storage.delete("override");
+			this.ctx.waitUntil(this.recover(accountId));
+			return true;
+		}
+		const { connections, included } = await this.#credentials(accountId).view();
+		const connection = connections.find((each) => each.id === pair.connectionId);
+		const offered =
+			pair.connectionId === INCLUDED
+				? pair.model === included
+				: Boolean(connection?.models.includes(pair.model));
+		if (!offered) return false;
+		await this.ctx.storage.put("override", { connectionId: pair.connectionId, model: pair.model });
+		this.ctx.waitUntil(this.recover(accountId));
+		return true;
+	}
+
+	async stored(): Promise<Record<string, unknown>> {
+		testStageOnly(this.env);
+		return Object.fromEntries(await this.ctx.storage.list());
+	}
+
+	evict(): void {
+		testStageOnly(this.env);
+		this.ctx.abort("evicted by the test stage");
+	}
+
+	/** This bot's ID: the name its object was reached by. */
+	get #botId(): string {
+		return this.ctx.id.name ?? this.ctx.id.toString();
+	}
+
+	/**
+	 * The account's Credentials object. Workers types keep only `fetch` on a stub whose shape
+	 * lacks their brand, so the RPC surface is restored here.
+	 */
+	#credentials(accountId: string): CredentialsRpc {
+		const namespace = this.env.CREDENTIALS as unknown as DurableObjectNamespace<Credentials>;
+		return namespace.getByName(accountId);
+	}
+
+	/**
+	 * Pi set up for the granted pair, holding only what the grant gave it. `seen.fault` takes
+	 * the fault a call met outside the provider's answer.
+	 */
+	async #model(accountId: string, grant: Granted, seen: { fault: Fault | null }) {
+		const credentials = new InMemoryCredentialStore();
+		const models = createModels({
+			credentials,
+			// No ambient env or files: the call uses only the credential it was granted.
+			authContext: { env: async () => undefined, fileExists: async () => false },
+		});
+		if ("included" in grant) {
+			// Pi wants a Cloudflare key and account before it sends. Neither is sent: each request
+			// goes to the account's Credentials object, which adds what the gateway needs.
+			await credentials.modify("cloudflare-workers-ai", async () => ({
+				type: "api_key",
+				key: CLOUDFLARE_GATEWAY_BINDING_AUTH_SENTINEL,
+				env: { CLOUDFLARE_ACCOUNT_ID: "binding" },
+			}));
+			models.setProvider(cloudflareWorkersAIProvider());
+			const model = models.getModel("cloudflare-workers-ai", grant.included);
+			if (!model) throw new Error(`Pi has no Workers AI model ${grant.included}`);
+			const through = this.#credentials(accountId);
+			const fetch: typeof globalThis.fetch = async (_url, init) =>
+				through.included(typeof init?.body === "string" ? init.body : "");
+			return { models, model, fetch };
+		}
+		// A ChatGPT plan pair runs on Pi's `openai` provider against the plan-usage Responses
+		// endpoint, never the Codex backend. Its grant is the access token alone, which Pi sends
+		// as a bearer token exactly as it would an OAuth credential's.
+		const chatgpt = grant.pair.connectionId === "chatgpt";
+		const provider = chatgpt ? "openai" : "opencode";
+		await credentials.modify(provider, async () => grant.credential);
+		models.setProvider(chatgpt ? openaiProvider() : opencodeProvider());
+		const catalogued = models.getModel(provider, grant.pair.model);
+		if (!catalogued) throw new Error(`Pi has no ${provider} model ${grant.pair.model}`);
+		// Pi drops the fields the plan-usage flow rejects only for api.openai.com itself, so that
+		// base URL stays as catalogued and the test stage reroutes through `fetch` instead.
+		if (chatgpt) {
+			const upstream = openaiFetch(this.env.OAUTH_UPSTREAM);
+			let key = grant.credential.key;
+			// A token OpenAI refuses before it expires gets one rotation and one more try.
+			const fetch: typeof globalThis.fetch = async (input, init) => {
+				const request = new Request(input, init);
+				const response = await upstream(request.clone());
+				if (response.status !== 401) return response;
+				const replaced = await this.#credentials(accountId).replaceAccess(accountId, key);
+				if (!replaced) return response;
+				if ("fault" in replaced) {
+					seen.fault = replaced.fault;
+					return response;
+				}
+				await response.body?.cancel();
+				key = replaced.key;
+				const headers = new Headers(request.headers);
+				headers.set("authorization", `Bearer ${key}`);
+				return upstream(new Request(request, { headers }));
+			};
+			return { models, model: catalogued, fetch };
+		}
+		const model = { ...catalogued, baseUrl: this.env.OPENCODE_BASE_URL ?? catalogued.baseUrl };
+		return { models, model, fetch: undefined };
+	}
+
+	/**
+	 * Asks Credentials for a grant, and once more on a fresh stub if the call broke: its object
+	 * may have been reset after saving a rotation, and the saved token answers the retry.
+	 */
+	async #grant(accountId: string, pair: Pair | null, waitingBot?: string): Promise<Grant> {
+		try {
+			return await this.#credentials(accountId).grant(accountId, pair, waitingBot);
+		} catch {
+			return this.#credentials(accountId).grant(accountId, pair, waitingBot);
+		}
+	}
+
+	/** Whether earlier work still waits: an unfinished turn, or anything queued. */
+	async #waiting(): Promise<boolean> {
+		const stored = await this.ctx.storage.get<unknown>(["unfinished", "queue"]);
+		const queue = stored.get("queue") as Queued[] | undefined;
+		return stored.has("unfinished") || Boolean(queue?.length);
+	}
+
+	/**
+	 * Queues `message` behind the waiting work, then tries to recover: that registers the bot
+	 * with Credentials while the connection still has a fault, and runs the work once it has none.
+	 */
+	async #enqueue(accountId: string, message: string): Promise<{ queued: string }> {
+		const queued: Queued = { id: crypto.randomUUID(), message, queuedAt: new Date().toISOString() };
+		const queue = (await this.ctx.storage.get<Queued[]>("queue")) ?? [];
+		await this.ctx.storage.put("queue", [...queue, queued]);
+		void this.recover(accountId);
+		return { queued: queued.id };
+	}
+
+	/**
+	 * Resumes the unfinished turn on its own pair, then starts each queued message as a turn on
+	 * the pair the bot uses now, in order. Stops at the first turn its connection interrupts.
+	 */
+	async #drain(accountId: string): Promise<void> {
+		const credentials = this.#credentials(accountId);
+		for (;;) {
+			const unfinishedId = await this.ctx.storage.get<string>("unfinished");
+			const unfinished = unfinishedId
+				? await this.ctx.storage.get<Turn>(`turn:${unfinishedId}`)
+				: undefined;
+			const next = unfinished ? undefined : (await this.ctx.storage.get<Queued[]>("queue"))?.[0];
+			if (!unfinished && !next) return;
+
+			// An unfinished turn keeps its pair; a queued message takes the pair the bot uses now.
+			const pair = unfinished?.pair ?? (await this.ctx.storage.get<Pair>("override")) ?? null;
+			const grant = await this.#grant(accountId, pair, next ? this.#botId : undefined);
+			if ("refused" in grant) {
+				// Still faulted: Credentials wakes the bot again.
+				if (grant.refused === "interrupted") {
+					if (!(await credentials.recordFault(accountId, this.#botId, grant.pair))) continue;
+					return;
+				}
+				// Its connection is gone: the turn stays interrupted and no longer holds the queue.
+				if (unfinished) {
+					await this.ctx.storage.delete("unfinished");
+					continue;
+				}
+				// Without a model, the queue waits.
+				return;
+			}
+			let turn: Turn;
+			if (unfinished) {
+				turn = { ...unfinished, status: "running" };
+				await this.ctx.storage.put(`turn:${turn.id}`, turn);
+			} else if (next) {
+				turn = {
+					id: next.id,
+					pair: grant.pair,
+					message: next.message,
+					reply: "",
+					status: "running",
+					startedAt: new Date().toISOString(),
+				};
+				// Read again: a message may have been queued while the grant was out.
+				const queue = (await this.ctx.storage.get<Queued[]>("queue")) ?? [];
+				await this.ctx.storage.put({
+					[`turn:${turn.id}`]: turn,
+					unfinished: turn.id,
+					queue: queue.filter((queued) => queued.id !== next.id),
+				});
+			} else return;
+
+			const running = { id: turn.id, controller: new AbortController() };
+			this.#running = running;
+			try {
+				const status = await this.#run(accountId, turn, grant, running.controller.signal, () => {});
+				if (status === "interrupted") return;
+			} finally {
+				if (this.#running === running) this.#running = null;
+			}
+		}
+	}
+
+	/**
+	 * Runs `turn` on its granted pair, continuing from the reply so far when it resumes. Saves
+	 * the reply as it streams, so an interruption or an eviction keeps it.
+	 */
+	async #run(
+		accountId: string,
+		turn: Turn,
+		grant: Granted,
+		signal: AbortSignal,
+		emit: (event: TurnEvent) => void,
+	): Promise<Ended> {
+		let status: Ended;
+		let fault: Fault | null = null;
+		// The provider's last answer, which says whether a failed call met a limit, an outage or
+		// a refused key.
+		const seen: { answer: Response | "unreachable" | null; fault: Fault | null } = {
+			answer: null,
+			fault: null,
+		};
+		// Where requests go: the network, or the account's Credentials object for the included model.
+		let send: typeof fetch = fetch;
+		const observed = async (input: RequestInfo | URL, init?: RequestInit) => {
+			try {
+				const response = await send(input, init);
+				seen.answer = response;
+				return response;
+			} catch (error) {
+				if (!signal.aborted) seen.answer = "unreachable";
+				throw error;
+			}
+		};
+		// A limit or an outage holds the turn for its source; the included model has no connection
+		// for the owner to reconnect, so anything else just fails its turn.
+		const faultFrom = (error?: string) => {
+			const found = seen.fault ?? faultOf(seen.answer, error);
+			return "included" in grant && found?.state === "ReconnectNeeded" ? null : found;
+		};
+		try {
+			const route = await this.#model(accountId, grant, seen);
+			const { models, model } = route;
+			send = route.fetch ?? fetch;
+			const now = Date.now();
+			const context: Context = {
+				systemPrompt: INSTRUCTIONS,
+				messages: [
+					{ role: "user", content: turn.message, timestamp: now },
+					// A resumed turn continues from what it already said.
+					...(turn.reply
+						? [
+								{
+									role: "assistant" as const,
+									content: [{ type: "text" as const, text: turn.reply }],
+									api: model.api,
+									provider: model.provider,
+									model: model.id,
+									usage: {
+										input: 0,
+										output: 0,
+										cacheRead: 0,
+										cacheWrite: 0,
+										totalTokens: 0,
+										cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+									},
+									stopReason: "stop" as const,
+									timestamp: now,
+								},
+							]
+						: []),
+				],
+				...("included" in grant ? { tools: TOOLS } : {}),
+			};
+			// Each round streams one reply; one that calls tools gets their results and goes again.
+			let reply: AssistantMessage;
+			for (let round = 1; ; round++) {
+				const events = models.stream(model, context, {
+					signal,
+					fetch: observed,
+					// One request per attempt: Credentials backs off with its probes, not Pi.
+					maxRetries: 0,
+				});
+				for await (const event of events) {
+					if (event.type !== "text_delta") continue;
+					turn.reply += event.delta;
+					void this.ctx.storage.put(`turn:${turn.id}`, turn).catch(() => {});
+					emit({ type: "delta", text: event.delta });
+				}
+				reply = await events.result();
+				if (reply.stopReason !== "toolUse" || round === TOOL_ROUNDS) break;
+				context.messages.push(reply, ...reply.content.flatMap(toolResult));
+			}
+			const errored = reply.stopReason === "error" || reply.stopReason === "aborted";
+			if (errored && !signal.aborted) fault = faultFrom(reply.errorMessage);
+			status = signal.aborted
+				? "stopped"
+				: fault
+					? "interrupted"
+					: errored
+						? "failed"
+						: "completed";
+			if (status === "failed") console.error("A turn failed:", reply.errorMessage);
+		} catch (error) {
+			if (!signal.aborted) fault = faultFrom(String(error));
+			status = signal.aborted ? "stopped" : fault ? "interrupted" : "failed";
+			if (status === "failed") console.error("A turn failed:", error);
+		}
+		if (fault) turn.interruption = fault.state;
+		Object.assign(turn, { status, endedAt: new Date().toISOString() });
+		await this.ctx.storage.put(`turn:${turn.id}`, turn);
+		if (fault) {
+			await this.ctx.storage.put("unfinished", turn.id);
+			await this.#credentials(accountId).recordFault(accountId, this.#botId, turn.pair, fault);
+		} else {
+			await this.ctx.storage.delete("unfinished");
+		}
+		emit({ type: "end", status });
+		return status;
+	}
+}

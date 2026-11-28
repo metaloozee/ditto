@@ -1,8 +1,27 @@
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import type { Pending, Turn, TurnStatus } from "#/bot-rpc.ts";
+import { DittoMark } from "#/components/ditto-mark.tsx";
+import {
+	BotSettings,
+	InterruptionCard,
+	QueuedBubble,
+	type ComposerMode,
+} from "#/components/model-access.tsx";
+import { ConversationBubble, ConversationContent } from "#/components/ui/conversation.tsx";
+import { toast } from "#/components/ui/toast.tsx";
 import { WorkspaceFailed, WorkspacePending, WorkspaceView } from "#/components/workspace.tsx";
 import { useSignOut } from "#/lib/auth-client.ts";
+import { chooseBotOverride, getBotOverride } from "#/lib/bot-model.ts";
+import {
+	accessOf,
+	checkConnection,
+	getModelAccess,
+	readModelAccess,
+} from "#/lib/model-access-api.ts";
+import { canMessage, type Interruption, type ModelAccess, type Pair } from "#/lib/model-access.ts";
+import { pendingTurns, resumeTurn, sendTurn, stopTurn } from "#/lib/turn.ts";
 import { getSidebarPinned, openWorkspace } from "#/lib/workspace.ts";
 
 type HomeSearch = { panel?: "computer" };
@@ -12,18 +31,190 @@ export const Route = createFileRoute("/_account/")({
 		search.panel === "computer" ? { panel: "computer" } : {},
 	// The open runs when the owner arrives; toggling the panel only changes the search.
 	shouldReload: false,
-	loader: async () => ({ workspace: await openWorkspace(), sidebarPinned: getSidebarPinned() }),
+	loader: async () => {
+		const [workspace, access] = await Promise.all([openWorkspace(), getModelAccess()]);
+		const override = await getBotOverride({
+			data: { workspaceId: workspace.workspaceId, botId: workspace.chiefOfStaff.id },
+		});
+		return { workspace, access, override, sidebarPinned: getSidebarPinned() };
+	},
 	pendingComponent: WorkspacePending,
 	errorComponent: Failed,
 	component: Home,
 });
 
+/** How often the page reads an interrupted turn and the queue while they wait. */
+const FOLLOW_MS = 1000;
+
+/**
+ * One exchange this visit: the owner's message and the reply as far as it has streamed. `live`
+ * while this page streams it; an interrupted turn and the queue are followed by reading them.
+ */
+interface Exchange {
+	key: string;
+	/** The bot's turn ID, once it answered with one. */
+	id?: string;
+	message: string;
+	reply: string;
+	status: TurnStatus | "refused" | "queued";
+	live?: boolean;
+	pair?: Turn["pair"];
+	interruption?: Turn["interruption"];
+}
+
+const ENDED: Partial<Record<Exchange["status"], string>> = {
+	stopped: "Stopped",
+	failed: "The model stopped answering",
+	refused: "Not sent",
+};
+
+const waits = (exchange: Exchange) =>
+	exchange.status === "interrupted" ||
+	exchange.status === "queued" ||
+	(exchange.status === "running" && !exchange.live);
+
+/** An exchange as the bot stored it. */
+const fromTurn = (turn: Turn): Exchange => ({
+	key: turn.id,
+	id: turn.id,
+	message: turn.message,
+	reply: turn.reply,
+	status: turn.status,
+	pair: turn.pair,
+	interruption: turn.interruption,
+});
+
+/** Brings each followed exchange up to what the bot stored. */
+function follow(exchanges: Exchange[], pending: Pending): Exchange[] {
+	return exchanges.map((exchange) => {
+		if (!exchange.id || exchange.live) return exchange;
+		const turn = pending.turns.find((each) => each.id === exchange.id);
+		if (turn) return { ...fromTurn(turn), key: exchange.key };
+		return pending.queue.some((queued) => queued.id === exchange.id)
+			? { ...exchange, status: "queued" }
+			: exchange;
+	});
+}
+
 function Home() {
 	const { account } = Route.useRouteContext();
-	const { workspace, sidebarPinned } = Route.useLoaderData();
+	const {
+		workspace,
+		access: loaded,
+		override: savedOverride,
+		sidebarPinned,
+	} = Route.useLoaderData();
 	const { panel } = Route.useSearch();
 	const navigate = useNavigate();
 	const signOut = useSignOut();
+	const [view, setView] = useState(loaded);
+	const [exchanges, setExchanges] = useState<Exchange[]>([]);
+	const [settingsOpen, setSettingsOpen] = useState(false);
+	const [override, setOverride] = useState(savedOverride ?? undefined);
+	const { workspaceId } = workspace;
+	const botId = workspace.chiefOfStaff.id;
+	const access = accessOf(view);
+
+	const changeOverride = async (pair: Pair | undefined) => {
+		const before = override;
+		setOverride(pair);
+		const refused = await chooseBotOverride(workspaceId, botId, pair ?? null);
+		if (!refused) return;
+		setOverride(before);
+		toast({
+			id: "notice-bot-model",
+			state: "error",
+			message: "Ditto’s model didn’t change",
+			description: refused,
+		});
+	};
+
+	const running = exchanges.some((exchange) => exchange.status === "running");
+	// While a connection is limited, what the owner sends waits in the bot's queue.
+	const queueing =
+		exchanges.some(waits) || access.connections.some((each) => each.state === "Throttled");
+	const composer: ComposerMode = running
+		? "running"
+		: // Turns run on the bot's own pair or the default, so without either nothing can send.
+			(canMessage(access) && Boolean(override ?? view.defaultPair)) || queueing
+			? "ready"
+			: "no-model";
+	const update = (key: string, change: (exchange: Exchange) => Exchange) =>
+		setExchanges((all) =>
+			all.map((exchange) => (exchange.key === key ? change(exchange) : exchange)),
+		);
+
+	// Work left waiting from an earlier visit: the unfinished turn and the queue.
+	useEffect(() => {
+		void pendingTurns(workspaceId, botId, []).then((pending) => {
+			if (!pending) return;
+			const unfinished = pending.turns.find((turn) => turn.id === pending.unfinished);
+			const waiting = [
+				...(unfinished ? [fromTurn(unfinished)] : []),
+				...pending.queue.map((queued): Exchange => ({
+					key: queued.id,
+					id: queued.id,
+					message: queued.message,
+					reply: "",
+					status: "queued",
+				})),
+			];
+			if (waiting.length) setExchanges((all) => (all.length ? all : waiting));
+		});
+	}, [workspaceId, botId]);
+
+	const following = exchanges.filter(waits).flatMap((exchange) => exchange.id ?? []);
+	const followed = following.join(",");
+	useEffect(() => {
+		if (!followed) return;
+		const ids = followed.split(",");
+		let active = true;
+		let reading = false;
+		const read = async () => {
+			if (reading) return;
+			reading = true;
+			const [pending, latest] = await Promise.all([
+				pendingTurns(workspaceId, botId, ids),
+				readModelAccess(),
+			]);
+			reading = false;
+			if (!active) return;
+			if (pending) setExchanges((all) => follow(all, pending));
+			if (latest) setView(latest);
+		};
+		void read();
+		const timer = setInterval(() => void read(), FOLLOW_MS);
+		return () => {
+			active = false;
+			clearInterval(timer);
+		};
+	}, [followed, workspaceId, botId]);
+
+	const send = async (message: string) => {
+		const key = crypto.randomUUID();
+		setExchanges((all) => [...all, { key, message, reply: "", status: "running", live: true }]);
+		const status = await sendTurn(
+			workspaceId,
+			botId,
+			message,
+			(text) => update(key, (exchange) => ({ ...exchange, reply: exchange.reply + text })),
+			(id) => update(key, (exchange) => ({ ...exchange, id })),
+		);
+		update(key, (exchange) => ({ ...exchange, status, live: false }));
+	};
+
+	const resume = async (exchange: Exchange, pair: Pair) => {
+		if (!exchange.id) return;
+		const refused = await resumeTurn(workspaceId, botId, exchange.id, pair);
+		if (!refused) return;
+		toast({
+			id: "notice-resume",
+			state: "error",
+			message: "The turn didn’t resume",
+			description: refused,
+		});
+	};
+
 	return (
 		<WorkspaceView
 			account={account}
@@ -35,8 +226,104 @@ function Home() {
 				void navigate({ to: "/", search: open ? { panel: "computer" } : {}, replace: true })
 			}
 			onSignOut={() => void signOut()}
+			composer={composer}
+			onSend={(message) => void send(message)}
+			onStop={() => void stopTurn(workspaceId, botId)}
+			onOpenBotSettings={() => setSettingsOpen(true)}
+			botSettings={
+				<BotSettings
+					name={workspace.chiefOfStaff.name}
+					role="Chief of Staff"
+					face={<DittoMark still />}
+					access={access}
+					defaultPair={view.defaultPair ?? undefined}
+					override={override}
+					onOverrideChange={(pair) => void changeOverride(pair)}
+					open={settingsOpen}
+					onOpenChange={setSettingsOpen}
+				/>
+			}
+			messages={
+				exchanges.length > 0
+					? exchanges.map((exchange) => (
+							<ExchangeBubbles
+								key={exchange.key}
+								exchange={exchange}
+								access={access}
+								botPair={override ?? view.defaultPair ?? undefined}
+								onResume={(pair) => void resume(exchange, pair)}
+								onCheck={async (connectionId) => {
+									await checkConnection(connectionId);
+									const latest = await readModelAccess();
+									if (latest) setView(latest);
+								}}
+							/>
+						))
+					: undefined
+			}
 		/>
 	);
+}
+
+function ExchangeBubbles({
+	exchange,
+	access,
+	botPair,
+	onResume,
+	onCheck,
+}: {
+	exchange: Exchange;
+	access: ModelAccess;
+	/** The pair the bot would start a turn on now: its override, else the default. */
+	botPair: Pair | undefined;
+	onResume: (pair: Pair) => void;
+	onCheck: (connectionId: string) => Promise<void>;
+}) {
+	if (exchange.status === "queued") return <QueuedBubble>{exchange.message}</QueuedBubble>;
+	const ended = ENDED[exchange.status];
+	return (
+		<>
+			<ConversationBubble variant="sent">
+				<ConversationContent>{exchange.message}</ConversationContent>
+			</ConversationBubble>
+			{(exchange.reply || ended) && (
+				<ConversationBubble aria-busy={exchange.status === "running"}>
+					{exchange.reply && <ConversationContent>{exchange.reply}</ConversationContent>}
+					{ended && <span className="ps-1 text-caption text-muted-foreground">{ended}</span>}
+				</ConversationBubble>
+			)}
+			{exchange.interruption && exchange.pair && (
+				<InterruptionCard
+					access={access}
+					// Carried on once it runs again, on its own pair or the one it was resumed on.
+					interruption={
+						exchange.status === "interrupted"
+							? waitingOn(access, exchange.pair, exchange.interruption)
+							: "Settled"
+					}
+					turnPair={exchange.pair}
+					defaultPair={botPair}
+					onResume={onResume}
+					onCheck={() => onCheck(exchange.pair?.connectionId ?? "")}
+				/>
+			)}
+		</>
+	);
+}
+
+/**
+ * What an interrupted turn waits on: its connection as it is now, which a probe may have
+ * changed since (an outage found to be a refused key), or what stopped it.
+ */
+function waitingOn(
+	access: ModelAccess,
+	pair: Pair,
+	stoppedBy: Exclude<Interruption, "Settled">,
+): Exclude<Interruption, "Settled"> {
+	const state = access.connections.find((each) => each.id === pair.connectionId)?.state;
+	return state === "Throttled" || state === "Unavailable" || state === "ReconnectNeeded"
+		? state
+		: stoppedBy;
 }
 
 function Failed() {
