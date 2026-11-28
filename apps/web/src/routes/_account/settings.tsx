@@ -40,7 +40,14 @@ export const Route = createFileRoute("/_account/settings")({
 	component: Settings,
 });
 
-const noop = () => {};
+function showChatGPTImport() {
+	toast({
+		id: "chatgpt-import",
+		state: "info",
+		message: "Import your ChatGPT sign-in",
+		description: `On your computer, set DITTO_COOKIE to your signed-in session cookie and run pnpm chatgpt:import ${window.location.origin} from the Ditto repository.`,
+	});
+}
 
 function oauthLinkOutcome(error: unknown): LinkOutcome {
 	switch (error) {
@@ -158,9 +165,8 @@ function Settings() {
 						await checkConnection(connectionId);
 						await router.invalidate();
 					}}
-					// Sign in with ChatGPT is a later ticket; an OpenCode key reconnects in its own form.
-					onConnectChatGPT={noop}
-					onReconnect={noop}
+					onConnectChatGPT={showChatGPTImport}
+					onReconnect={showChatGPTImport}
 				/>
 			}
 		/>

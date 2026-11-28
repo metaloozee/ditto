@@ -60,8 +60,6 @@ interface Exchange {
 	live?: boolean;
 	pair?: Turn["pair"];
 	interruption?: Turn["interruption"];
-	/** How many times a Resume on another pair was refused. */
-	refusals?: number;
 }
 
 const ENDED: Partial<Record<Exchange["status"], string>> = {
@@ -131,7 +129,7 @@ function Home() {
 		});
 	};
 
-	const running = exchanges.some((exchange) => exchange.live && exchange.status === "running");
+	const running = exchanges.some((exchange) => exchange.status === "running");
 	// While a connection is limited, what the owner sends waits in the bot's queue.
 	const queueing =
 		exchanges.some(waits) || access.connections.some((each) => each.state === "Throttled");
@@ -170,17 +168,26 @@ function Home() {
 	useEffect(() => {
 		if (!followed) return;
 		const ids = followed.split(",");
+		let active = true;
+		let reading = false;
 		const read = async () => {
+			if (reading) return;
+			reading = true;
 			const [pending, latest] = await Promise.all([
 				pendingTurns(workspaceId, botId, ids),
 				readModelAccess(),
 			]);
+			reading = false;
+			if (!active) return;
 			if (pending) setExchanges((all) => follow(all, pending));
 			if (latest) setView(latest);
 		};
 		void read();
 		const timer = setInterval(() => void read(), FOLLOW_MS);
-		return () => clearInterval(timer);
+		return () => {
+			active = false;
+			clearInterval(timer);
+		};
 	}, [followed, workspaceId, botId]);
 
 	const send = async (message: string) => {
@@ -200,7 +207,6 @@ function Home() {
 		if (!exchange.id) return;
 		const refused = await resumeTurn(workspaceId, botId, exchange.id, pair);
 		if (!refused) return;
-		update(exchange.key, (each) => ({ ...each, refusals: (each.refusals ?? 0) + 1 }));
 		toast({
 			id: "notice-resume",
 			state: "error",
@@ -288,8 +294,6 @@ function ExchangeBubbles({
 			)}
 			{exchange.interruption && exchange.pair && (
 				<InterruptionCard
-					// A refused Resume mounts a fresh card, so it offers Resume again.
-					key={exchange.refusals ?? 0}
 					access={access}
 					// Carried on once it runs again, on its own pair or the one it was resumed on.
 					interruption={

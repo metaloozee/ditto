@@ -8,6 +8,7 @@ import {
 	clearOpenCodeFault,
 	openCodeAsked,
 	openCodeRequests,
+	releaseOpenCodeTurn,
 	replyToNextOpenCodeTurn,
 } from "./opencode.ts";
 import {
@@ -84,7 +85,7 @@ describe("a limit mid-turn", () => {
 		// Nothing the owner sent reached OpenCode yet.
 		await expect(turnsAsked(key)).resolves.toEqual(["Draft the weekly update."]);
 
-		await replyToNextOpenCodeTurn({ deltas: [" Then the third."] });
+		await replyToNextOpenCodeTurn({ deltas: [" Then the third."], hold: true });
 		await replyToNextOpenCodeTurn({ deltas: ["Hiring is up by three."] });
 		await replyToNextOpenCodeTurn({ deltas: ["The budget holds."] });
 		await clearOpenCodeFault(key);
@@ -92,6 +93,8 @@ describe("a limit mid-turn", () => {
 		await messages(page)
 			.getByText("I got through the first two sections. Then the third.")
 			.waitFor({ timeout: 20_000 });
+		await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+		await releaseOpenCodeTurn(key);
 		await messages(page).getByText("Carried on with deepseek-v4.1-flash · OpenCode").waitFor();
 		await messages(page).getByText("Hiring is up by three.").waitFor({ timeout: 10_000 });
 		await messages(page).getByText("The budget holds.").waitFor({ timeout: 10_000 });

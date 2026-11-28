@@ -67,6 +67,8 @@ describe("a self-deployed Ditto", () => {
 		await deployAs(context, { mode: "self-deployed", license: LICENSE });
 
 		await expectOffered(page);
+		await modelAccess(page).getByRole("button", { name: "Connect ChatGPT plan" }).click();
+		await page.getByText("Import your ChatGPT sign-in", { exact: true }).waitFor();
 		const credential = await chatgptCredential();
 		expect((await importCredential(context, credential)).status()).toBe(204);
 		expect((await post(context, workspaceId, botId, "Hello")).status).toBe(200);

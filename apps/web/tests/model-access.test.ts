@@ -103,6 +103,9 @@ describe("picking a pair", () => {
 		expect(pairLabel(access, { connectionId: "oc-1", model: "Model A" })).toBe(
 			"Model A · OpenCode",
 		);
+		expect(pairLabel({ connections: [] }, { connectionId: "chatgpt", model: "Model D" })).toBe(
+			"Model D · ChatGPT plan",
+		);
 		expect(pairLabel(access, { connectionId: "included", model: "Model C" })).toBe(
 			"Model C · Included",
 		);

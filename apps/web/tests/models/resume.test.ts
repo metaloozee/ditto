@@ -6,6 +6,7 @@ import { describe, expect, inject, it } from "vite-plus/test";
 import type { Turn } from "../../src/bot-rpc.ts";
 import type { Pair } from "../../src/lib/model-access.ts";
 import { newVisitor, open } from "../auth/visitor.ts";
+import { chatgptCredential, rejectAccessToken, revokeRefreshToken } from "./chatgpt.ts";
 import {
 	clearOpenCodeFault,
 	openCodeAsked,
@@ -232,6 +233,26 @@ describe("another account", () => {
 });
 
 describe("the interruption card", () => {
+	it("shows the new interruption when the resumed turn loses access", async () => {
+		const { page, context, workspaceId, botId } = await owner();
+		const key = await connectKey(context);
+		const credential = await chatgptCredential();
+		expect(
+			(await context.request.post("/api/models/chatgpt", { data: { credential } })).status(),
+		).toBe(204);
+		await interruptAll(context, workspaceId, key, [botId]);
+		await chooseDefault(context, CHATGPT);
+		await rejectAccessToken(credential.access);
+		await revokeRefreshToken(credential.refresh);
+		await open(page, "/");
+		await messages(page)
+			.getByRole("button", { name: /^Resume on/ })
+			.click();
+		const card = messages(page).getByRole("group", { name: "gpt-5.5 · ChatGPT plan" });
+		await card.getByText("Reconnect needed", { exact: true }).waitFor();
+		await card.getByRole("link", { name: "Reconnect" }).waitFor();
+	}, 60_000);
+
 	it("offers Resume only when the bot's pair differs from the turn's, then settles on the new pair", async () => {
 		const { page, context, workspaceId, botId } = await owner();
 		const key = await connectKey(context);

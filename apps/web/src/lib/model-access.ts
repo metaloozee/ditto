@@ -65,10 +65,12 @@ export interface StateView {
 }
 
 export function stateView(
-	connection: Pick<Connection, "provider" | "state" | "resetsAt">,
+	connection: Pick<Connection, "state" | "resetsAt"> & { provider?: ConnectionProvider },
 	format: { locale?: string; timeZone?: string } = {},
 ): StateView {
-	const { issuer, noun } = CREDENTIAL[connection.provider];
+	const { issuer, noun } = connection.provider
+		? CREDENTIAL[connection.provider]
+		: { issuer: "The model provider", noun: "credential" };
 	switch (connection.state) {
 		case "Connected":
 			return {
@@ -160,7 +162,12 @@ export function pairGroups(access: ModelAccess): PairGroup[] {
 /** Where a pair's model runs: its connection's provider, or the included model. */
 export function pairSource(access: ModelAccess, pair: Pair): string {
 	const connection = access.connections.find((each) => each.id === pair.connectionId);
-	return connection ? PROVIDER_NAMES[connection.provider] : "Included";
+	if (connection) return PROVIDER_NAMES[connection.provider];
+	if (pair.connectionId === INCLUDED) return "Included";
+	if (pair.connectionId === "opencode" || pair.connectionId === "chatgpt") {
+		return PROVIDER_NAMES[pair.connectionId];
+	}
+	return "Disconnected";
 }
 
 export function pairLabel(access: ModelAccess, pair: Pair): string {

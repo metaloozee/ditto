@@ -269,7 +269,8 @@ function WorkspacePrototype({ state }: { state: State }) {
 	const [override, setOverride] = useState<Pair | undefined>(
 		state === "bot-override" ? PAIR_B : undefined,
 	);
-	const interruption = INTERRUPTIONS[state];
+	const [resumed, setResumed] = useState<Pair>();
+	const interruption = resumed ? "Settled" : INTERRUPTIONS[state];
 	const turnState: ConnectionState =
 		interruption && interruption !== "Settled" ? interruption : "Connected";
 	const access: ModelAccess =
@@ -341,7 +342,8 @@ function WorkspacePrototype({ state }: { state: State }) {
 							interruption={interruption}
 							turnPair={PAIR_A}
 							defaultPair={defaultPair}
-							settledPair={PAIR_B}
+							settledPair={resumed ?? PAIR_B}
+							onResume={setResumed}
 							onCheck={() => wait(1200)}
 						/>
 					)}

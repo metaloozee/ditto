@@ -60,7 +60,7 @@ import {
 /* State badge                                                                                 */
 
 /** A connection's state as a label with a mark, so colour never carries the meaning alone. */
-export function StateBadge({ connection }: { connection: Connection }) {
+export function StateBadge({ connection }: { connection: Parameters<typeof stateView>[0] }) {
 	const view = stateView(connection);
 	if (view.tone === "destructive") {
 		return (
@@ -1126,14 +1126,17 @@ export function InterruptionCard({
 	onCheck?: () => Promise<void> | void;
 }) {
 	const narrow = useIsMobile();
-	// Settled by the owner's Resume here, or by the turn carrying on, which can happen later.
-	const [resumed, setResumed] = useState<Pair>();
-	const settled = resumed ?? (interruption === "Settled" ? (settledPair ?? turnPair) : undefined);
+	const settled = interruption === "Settled" ? (settledPair ?? turnPair) : undefined;
 	const [checking, setChecking] = useState(false);
 	const connection = access.connections.find((each) => each.id === turnPair.connectionId);
 	const current: Interruption = settled ? "Settled" : interruption;
 	const stopped = current === "Settled" ? undefined : current;
-	const view = connection && stopped ? stateView({ ...connection, state: stopped }) : undefined;
+	const health = stopped && {
+		provider: connection?.provider,
+		resetsAt: connection?.resetsAt,
+		state: stopped,
+	};
+	const view = health && stateView(health);
 	const actions = interruptionActions(current, turnPair, defaultPair);
 
 	return (
@@ -1158,9 +1161,7 @@ export function InterruptionCard({
 								head={
 									<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
 										<span className="min-w-0 font-medium">{pairLabel(access, turnPair)}</span>
-										{connection && stopped && (
-											<StateBadge connection={{ ...connection, state: stopped }} />
-										)}
+										{health && <StateBadge connection={health} />}
 									</div>
 								}
 								actions={
@@ -1174,7 +1175,6 @@ export function InterruptionCard({
 															title={`Resume on ${pairLabel(access, action.pair)}`}
 															className="max-w-full shrink"
 															onClick={() => {
-																setResumed(action.pair);
 																onResume?.(action.pair);
 															}}
 														>
