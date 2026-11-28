@@ -4,7 +4,7 @@ import type { BrowserContext } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
 import { SESSION_EXPIRES_IN } from "../auth/setup.ts";
-import { continueWithGitHub, gitHubUser, newVisitor } from "../auth/visitor.ts";
+import { continueWithGitHub, gitHubUser, keepSignedIn, newVisitor } from "../auth/visitor.ts";
 
 /** A visitor signed in with GitHub who has opened their personal workspace. */
 async function owner() {
@@ -64,6 +64,7 @@ describe("a workspace's private files", () => {
 
 	it("refuses another account's file exactly as it refuses a missing one", async () => {
 		const alice = await owner();
+		keepSignedIn(alice.context);
 		const bob = await owner();
 		await seed(alice.context, alice.workspaceId, "screenshots/step-1.png", "pixels", "image/png");
 
@@ -100,6 +101,7 @@ describe("a workspace's private files", () => {
 
 	it("refuses a path that escapes the owner's workspace prefix, by traversal or by naming another workspace", async () => {
 		const alice = await owner();
+		keepSignedIn(alice.context);
 		const bob = await owner();
 		await seed(alice.context, alice.workspaceId, "published/secret.txt", "alice only");
 		await seed(bob.context, bob.workspaceId, "published/secret.txt", "bob's own");

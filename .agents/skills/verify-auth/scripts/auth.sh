@@ -75,7 +75,8 @@ cmd_up() {
 			COOKIE_ENCRYPTION_KEY=verify-auth-only-key COMPUTER_IDLE_SECONDS=300 \
 			GITHUB_CLIENT_ID=test-github-client GITHUB_CLIENT_SECRET=test-github-secret \
 			GOOGLE_CLIENT_ID=test-google-client GOOGLE_CLIENT_SECRET=test-google-secret \
-			OAUTH_UPSTREAM="$upstream" \
+			OAUTH_UPSTREAM="$upstream" OPENCODE_BASE_URL="$upstream/opencode.ai/inference/openai/v1" \
+			CREDENTIALS_ENCRYPTION_KEY=verify-auth-only-model-key TEST_AI_PORT=0 \
 			RESEND_API_KEY=re_test RESEND_FROM="Ditto <sign-in@test.example>" RESEND_BASE_URL="$upstream/resend" \
 			SESSION_EXPIRES_IN="${VERIFY_AUTH_SESSION_EXPIRES_IN:-30}" \
 			CODE_EXPIRES_IN="${VERIFY_AUTH_CODE_EXPIRES_IN:-10}" \

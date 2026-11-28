@@ -44,7 +44,11 @@ export class Website extends Cloudflare.Website.Vite<Website>()(
 							name: `ditto-app-${stage}-workers-ai`,
 							main: path.join(import.meta.dirname, "apps/web/tests/models/workers-ai-stand-in.ts"),
 							// Off the dev port it would take otherwise. Reached only through the binding.
-							dev: { port: 1352 },
+							dev: {
+								port: yield* Effect.orDie(
+									Config.Int("TEST_AI_PORT").pipe(Config.withDefault(1352)),
+								),
+							},
 							env: { UPSTREAM: Config.String("OAUTH_UPSTREAM") },
 						}),
 						AI_GATEWAY_ID: "test-gateway",

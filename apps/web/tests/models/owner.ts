@@ -5,20 +5,8 @@ import { expect } from "vite-plus/test";
 
 import type { Pair } from "../../src/lib/model-access.ts";
 import type { GitHubIdentity } from "../auth/fake-upstream.ts";
-import { continueWithGitHub, gitHubUser, newVisitor } from "../auth/visitor.ts";
+import { continueWithGitHub, gitHubUser, keepSignedIn, newVisitor } from "../auth/visitor.ts";
 import { openCodeKey } from "./opencode.ts";
-
-/**
- * A test-stage session lapses after a few idle seconds, so the auth tests can watch it expire.
- * These tests aren't about that, so an owner's session is refreshed every two seconds.
- */
-function keepSignedIn(context: BrowserContext) {
-	const refresh = setInterval(() => {
-		context.request.get("/api/auth/get-session").catch(() => {});
-	}, 2000);
-	refresh.unref();
-	context.on("close", () => clearInterval(refresh));
-}
 
 /**
  * A signed-in owner, as `user` on a browser with `options`, who has opened their personal

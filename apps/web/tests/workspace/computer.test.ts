@@ -7,7 +7,7 @@ import type { BrowserContext } from "playwright";
 import { describe, expect, it } from "vite-plus/test";
 
 import { COMPUTER_IDLE_SECONDS, COMPUTER_LIFETIME_SECONDS } from "../auth/setup.ts";
-import { continueWithGitHub, gitHubUser, newVisitor } from "../auth/visitor.ts";
+import { continueWithGitHub, gitHubUser, keepSignedIn, newVisitor } from "../auth/visitor.ts";
 
 interface ComputerStatus {
 	computer: "stopped" | "running";
@@ -25,6 +25,7 @@ interface Decision {
 async function owner() {
 	const visitor = await newVisitor();
 	await continueWithGitHub(visitor.page, gitHubUser());
+	keepSignedIn(visitor.context);
 	const opened = await visitor.context.request.post("/api/workspaces/open");
 	expect(opened.status()).toBe(200);
 	const body = (await opened.json()) as {
@@ -273,12 +274,11 @@ describe("the shared computer", () => {
 	it("refuses another account's start, stop, list change and reach at the gateway", async () => {
 		const alice = await owner();
 		const bob = await owner();
-		const probe = async () =>
-			(
-				(await (await alice.context.request.get(at(alice.workspaceId, "/"))).json()) as {
-					requests: number;
-				}
-			).requests;
+		const probe = async () => {
+			const answer = await alice.context.request.get(at(alice.workspaceId, "/"));
+			expect(answer.status()).toBe(200);
+			return ((await answer.json()) as { requests: number }).requests;
+		};
 		const before = await probe();
 
 		const attempts = [

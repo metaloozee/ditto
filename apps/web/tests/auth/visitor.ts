@@ -1,7 +1,13 @@
 import { randomInt } from "node:crypto";
 
-import { chromium, type Browser, type BrowserContextOptions, type Page } from "playwright";
-import { afterAll, beforeAll, inject } from "vite-plus/test";
+import {
+	chromium,
+	type Browser,
+	type BrowserContext,
+	type BrowserContextOptions,
+	type Page,
+} from "playwright";
+import { afterAll, beforeAll, inject, onTestFinished } from "vite-plus/test";
 
 import type { GitHubAuthorization, GitHubIdentity } from "./fake-upstream.ts";
 
@@ -28,8 +34,21 @@ export async function newVisitor(options: BrowserContextOptions = {}) {
 			"cf-connecting-ip": `10.${randomInt(256)}.${randomInt(256)}.${randomInt(256)}`,
 		},
 	});
+	onTestFinished(() => context.close());
 	const page = await context.newPage();
 	return { context, page };
+}
+
+/**
+ * A test-stage session lapses after a few idle seconds, so the auth tests can watch it expire.
+ * For tests requiring an active owner, refresh until the test closes the browser context.
+ */
+export function keepSignedIn(context: BrowserContext) {
+	const refresh = setInterval(() => {
+		context.request.get("/api/auth/get-session").catch(() => {});
+	}, 2000);
+	refresh.unref();
+	context.on("close", () => clearInterval(refresh));
 }
 
 /**
